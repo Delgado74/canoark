@@ -16,6 +16,7 @@ import { closeArkadeSession, getArkadeSession, openArkadeSession } from '../lib/
 import {
   canUseBiometrics,
   deleteWalletSecrets,
+  getMnemonicAuthMode,
   hasStoredWallet,
   isValidMnemonic,
   loadWalletMnemonic,
@@ -59,6 +60,8 @@ type WalletContextValue = {
   address: string | null;
   boardingAddress: string | null;
   network: NetworkConfig;
+  /** true si la wallet guardada se desbloquea con passphrase (no biometría). */
+  requiresPassphrase: boolean;
   clearError: () => void;
   /** Devuelve el resultado del guardado (degradación incluida). */
   createWallet: (options: CreateWalletOptions) => Promise<SaveResult>;
@@ -103,6 +106,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [balance, setBalance] = useState<BalanceView | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [boardingAddress, setBoardingAddress] = useState<string | null>(null);
+  const [requiresPassphrase, setRequiresPassphrase] = useState<boolean>(false);
 
   const mnemonicRef = useRef<string | null>(null);
   const statusRef = useRef<WalletStatus>('loading');
@@ -116,7 +120,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     void (async () => {
       const exists = await hasStoredWallet();
-      if (!cancelled) setStatus(exists ? 'locked' : 'empty');
+      if (cancelled) return;
+      setStatus(exists ? 'locked' : 'empty');
+      if (exists) {
+        const authMode = await getMnemonicAuthMode();
+        if (!cancelled) setRequiresPassphrase(authMode === 'passphrase');
+      }
     })();
     return () => {
       cancelled = true;
@@ -183,6 +192,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         mnemonicRef.current = phrase;
         setStatus('unlocked');
         statusRef.current = 'unlocked';
+        setRequiresPassphrase(result.mode === 'passphrase');
 
         try {
           await connect();
@@ -244,6 +254,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       resetState();
       setStatus('empty');
       statusRef.current = 'empty';
+      setRequiresPassphrase(false);
     } finally {
       setBusy(false);
     }
@@ -329,6 +340,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     address,
     boardingAddress,
     network: ACTIVE_NETWORK,
+    requiresPassphrase,
     clearError: () => setError(null),
     createWallet,
     unlock,
