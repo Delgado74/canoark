@@ -21,6 +21,8 @@ import {
   loadWalletMnemonic,
   normalizeMnemonic,
   saveWalletMnemonic,
+  type SaveMode,
+  type SaveResult,
 } from '../lib/arkade/identity';
 import {
   forgetLnurlSecrets,
@@ -38,6 +40,16 @@ export type SendOutcome =
   | { kind: 'arkade'; txid: string }
   | PayResult;
 
+export interface CreateWalletOptions {
+  mnemonic: string;
+  mode: SaveMode;
+  passphrase?: string;
+}
+
+export interface UnlockOptions {
+  passphrase?: string;
+}
+
 type WalletContextValue = {
   status: WalletStatus;
   busy: boolean;
@@ -48,8 +60,10 @@ type WalletContextValue = {
   boardingAddress: string | null;
   network: NetworkConfig;
   clearError: () => void;
-  createWallet: (mnemonic: string) => Promise<void>;
-  unlock: () => Promise<void>;
+  /** Devuelve el resultado del guardado (degradación incluida). */
+  createWallet: (options: CreateWalletOptions) => Promise<SaveResult>;
+  /** Acepta passphrase para wallets guardadas en modo passphrase. */
+  unlock: (options?: UnlockOptions) => Promise<void>;
   lock: () => Promise<void>;
   wipe: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -153,8 +167,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, [connect]);
 
   const createWallet = useCallback(
-    async (mnemonic: string) => {
-      const phrase = normalizeMnemonic(mnemonic);
+    async (options: CreateWalletOptions): Promise<SaveResult> => {
+      const phrase = normalizeMnemonic(options.mnemonic);
       if (!isValidMnemonic(phrase)) {
         throw new Error('La frase de recuperación no es válida.');
       }
@@ -162,8 +176,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       setBusy(true);
       setError(null);
       try {
-        const requireAuth = await canUseBiometrics();
-        await saveWalletMnemonic(phrase, requireAuth);
+        const result = await saveWalletMnemonic(phrase, {
+          mode: options.mode,
+          passphrase: options.passphrase,
+        });
         mnemonicRef.current = phrase;
         setStatus('unlocked');
         statusRef.current = 'unlocked';
@@ -174,6 +190,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           // La wallet existe y está desbloqueada; el error es de red.
           setError(errorMessage(err));
         }
+        return result;
       } finally {
         setBusy(false);
       }
@@ -181,27 +198,32 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     [connect]
   );
 
-  const unlock = useCallback(async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const mnemonic = await loadWalletMnemonic();
-      mnemonicRef.current = mnemonic;
-      setStatus('unlocked');
-      statusRef.current = 'unlocked';
-
+  const unlock = useCallback(
+    async (options?: UnlockOptions) => {
+      setBusy(true);
+      setError(null);
       try {
-        await connect();
+        const mnemonic = await loadWalletMnemonic({
+          passphrase: options?.passphrase,
+        });
+        mnemonicRef.current = mnemonic;
+        setStatus('unlocked');
+        statusRef.current = 'unlocked';
+
+        try {
+          await connect();
+        } catch (err) {
+          setError(errorMessage(err));
+        }
       } catch (err) {
         setError(errorMessage(err));
+        throw err;
+      } finally {
+        setBusy(false);
       }
-    } catch (err) {
-      setError(errorMessage(err));
-      throw err;
-    } finally {
-      setBusy(false);
-    }
-  }, [connect]);
+    },
+    [connect]
+  );
 
   const lock = useCallback(async () => {
     mnemonicRef.current = null;
