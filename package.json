@@ -19,6 +19,7 @@
     "@arkade-os/swap": "^0.1.5",
     "@scure/bip39": "^2.4.0",
     "expo": "~58.0.24",
+    "expo-build-properties": "~58.0.12",
     "expo-clipboard": "~58.0.4",
     "expo-constants": "~58.0.16",
     "expo-crypto": "~58.0.8",

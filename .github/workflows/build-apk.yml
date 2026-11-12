@@ -50,7 +50,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platform-tools platforms;android-37 build-tools;37.0.0 ndk;27.1.12297006'
+          packages: 'platform-tools platforms;android-36 build-tools;36.1.0 ndk;27.1.12297006'
 
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@v4
