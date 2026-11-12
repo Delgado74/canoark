@@ -74,6 +74,20 @@ export async function hasStoredWallet(): Promise<boolean> {
 }
 
 /**
+ * Devuelve el modo de autenticación con el que se guardó la mnemónica.
+ * Se usa al arrancar para que la pantalla de desbloqueo sepa si debe
+ * pedir passphrase o si puede intentar biometría.
+ */
+export async function getMnemonicAuthMode(): Promise<SaveMode> {
+  try {
+    const flag = await SecureStore.getItemAsync(MNEMONIC_AUTH_KEY);
+    return flag === '1' ? 'biometric' : 'passphrase';
+  } catch {
+    return 'passphrase';
+  }
+}
+
+/**
  * Guarda la mnemónica con el modo elegido. Si el modo es 'biometric'
  * pero el dispositivo no puede usarlo (o falla en tiempo de ejecución),
  * degrada a 'passphrase' y devuelve `degraded: true` con el motivo.
