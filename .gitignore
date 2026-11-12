@@ -1,0 +1,27 @@
+node_modules/
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Generado por `expo prebuild`; se reconstruye en CI.
+/android
+/ios
+
+# Secretos y credenciales de firma
+.env
+.env.local
+*.jks
+*.keystore
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# Logs y basura del sistema
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.DS_Store
+*.tsbuildinfo

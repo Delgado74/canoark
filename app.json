@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "CanoArk",
+    "slug": "canoark",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "canoark",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "icon": "./assets/icon.png",
+    "android": {
+      "package": "com.canoark.wallet",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0B0E11"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": "CanoArk usa Face ID para desbloquear tu billetera."
+        }
+      ],
+      "expo-sqlite",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "CanoArk usa biometría para desbloquear tu billetera."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0B0E11",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 160
+        }
+      ]
+    ]
+  }
+}
