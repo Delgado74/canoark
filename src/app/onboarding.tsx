@@ -1,332 +1,354 @@
-import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Redirect, router } from 'expo-router';
-import * as Clipboard from 'expo-clipboard';
 import {
-  Badge,
-  Button,
-  Card,
-  ErrorBanner,
-  Field,
-  Notice,
-  Paragraph,
-  Screen,
-  Title,
-} from '../components/ui';
-import { colors, spacing } from '../constants/theme';
-import { useWallet } from '../hooks/useWallet';
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
+import type { PayResult } from '@arkade-os/swap';
+import type { WalletBalance } from '@arkade-os/sdk';
+import { ACTIVE_NETWORK, type NetworkConfig } from '../constants/network';
+import type { BalanceView } from '../types/wallet';
+import { closeArkadeSession, getArkadeSession, openArkadeSession } from '../lib/arkade/client';
 import {
-  generateWalletMnemonic,
+  canUseBiometrics,
+  deleteWalletSecrets,
+  hasStoredWallet,
   isValidMnemonic,
+  loadWalletMnemonic,
   normalizeMnemonic,
+  saveWalletMnemonic,
+  type SaveMode,
+  type SaveResult,
 } from '../lib/arkade/identity';
+import {
+  forgetLnurlSecrets,
+  isArkadeAddress,
+  payThroughSolver,
+  receiveLightning,
+  watchSwap,
+} from '../lib/arkade/lightning';
+import { wipeStorageDatabases } from '../lib/storage/sqlite';
 import { errorMessage } from '../lib/format';
 
-type Mode = 'create' | 'import';
+export type WalletStatus = 'loading' | 'empty' | 'locked' | 'unlocked';
 
-export default function OnboardingScreen() {
-  const { status, busy, createWallet } = useWallet();
-  const [mode, setMode] = useState<Mode>('create');
-  const [mnemonic] = useState(() => generateWalletMnemonic());
-  const [imported, setImported] = useState('');
-  const [confirmed, setConfirmed] = useState(false);
-  const [localError, setLocalError] = useState<string | null>(null);
+export type SendOutcome =
+  | { kind: 'arkade'; txid: string }
+  | PayResult;
 
-  if (status === 'unlocked') return <Redirect href="/(tabs)" />;
-  if (status === 'locked') return <Redirect href="/unlock" />;
-
-  const words = mnemonic.split(' ');
-
-  const submit = async () => {
-    setLocalError(null);
-    const phrase = mode === 'create' ? mnemonic : normalizeMnemonic(imported);
-
-    if (!isValidMnemonic(phrase)) {
-      setLocalError(
-        'La frase no es válida. Deben ser 12 o 24 palabras del diccionario BIP39.'
-      );
-      return;
-    }
-    if (mode === 'create' && !confirmed) {
-      setLocalError('Confirma que guardaste la frase antes de continuar.');
-      return;
-    }
-
-    try {
-      await createWallet(phrase);
-      router.replace('/(tabs)');
-    } catch (error) {
-      setLocalError(errorMessage(error));
-    }
-  };
-
-  const copyPhrase = async () => {
-    await Clipboard.setStringAsync(mnemonic);
-    Alert.alert(
-      'Frase copiada',
-      'No la pegues en chats ni la dejes en el portapapeles. Guárdala offline.'
-    );
-  };
-
-  return (
-    <Screen>
-      <View style={styles.header}>
-        <View style={styles.brandRow}>
-          <Text style={styles.logo}>◈</Text>
-          <Title>CanoArk</Title>
-        </View>
-        <Badge
-          label={status === 'empty' ? 'Billetera nueva' : 'Configuración'}
-          tone="primary"
-        />
-      </View>
-
-      <Paragraph muted>
-        Una billetera Arkade para Android. Tus llaves se generan en el
-        dispositivo; nadie más las tiene.
-      </Paragraph>
-
-      <View style={styles.segment}>
-        <SegmentButton
-          label="Crear"
-          active={mode === 'create'}
-          onPress={() => {
-            setMode('create');
-            setLocalError(null);
-          }}
-        />
-        <SegmentButton
-          label="Importar"
-          active={mode === 'import'}
-          onPress={() => {
-            setMode('import');
-            setLocalError(null);
-          }}
-        />
-      </View>
-
-      {localError ? <ErrorBanner message={localError} /> : null}
-
-      {mode === 'create' ? (
-        <>
-          <Card
-            title="Tu frase de recuperación"
-            subtitle="12 palabras. Es la única forma de recuperar tus fondos."
-          >
-            <View style={styles.words}>
-              {words.map((word, index) => (
-                <View key={`${word}-${index}`} style={styles.word}>
-                  <Text style={styles.wordIndex}>{index + 1}</Text>
-                  <Text style={styles.wordText}>{word}</Text>
-                </View>
-              ))}
-            </View>
-            <Button
-              title="Copiar frase"
-              variant="secondary"
-              onPress={copyPhrase}
-            />
-          </Card>
-
-          <Notice tone="danger">
-            Quien tenga esta frase puede gastar tus fondos. No la compartas, no
-            la fotografíes y no la guardes en la nube.
-          </Notice>
-
-          <PressableCheck
-            checked={confirmed}
-            onPress={() => setConfirmed(value => !value)}
-            label="Guardé la frase en un lugar seguro y entiendo que sin ella no puedo recuperar la billetera."
-          />
-
-          <Button
-            title="Crear billetera"
-            onPress={submit}
-            loading={busy}
-            disabled={!confirmed}
-          />
-        </>
-      ) : (
-        <>
-          <Card
-            title="Recuperar billetera"
-            subtitle="Escribe la frase de 12 o 24 palabras separadas por espacios."
-          >
-            <Field
-              label="Frase de recuperación"
-              value={imported}
-              onChangeText={setImported}
-              placeholder="palabra1 palabra2 palabra3…"
-              autoCapitalize="none"
-              autoCorrect={false}
-              multiline
-              numberOfLines={4}
-            />
-            <Button
-              title="Importar billetera"
-              onPress={submit}
-              loading={busy}
-            />
-          </Card>
-
-          <Notice tone="info">
-            Al importar, CanoArk solo guarda la frase en el almacenamiento
-            seguro del dispositivo. La red se elige al compilar la app.
-          </Notice>
-        </>
-      )}
-
-      <Notice tone="info">
-        Si el dispositivo tiene biometría, Android Keystore pedirá huella o
-        rostro para leer la mnemónica al desbloquear. La frase nunca se guarda
-        en texto plano.
-      </Notice>
-    </Screen>
-  );
+export interface CreateWalletOptions {
+  mnemonic: string;
+  mode: SaveMode;
+  passphrase?: string;
 }
 
-function SegmentButton({
-  label,
-  active,
-  onPress,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Text
-      onPress={onPress}
-      style={[styles.segmentButton, active && styles.segmentButtonActive]}
-    >
-      {label}
-    </Text>
-  );
+export interface UnlockOptions {
+  passphrase?: string;
 }
 
-function PressableCheck({
-  checked,
-  onPress,
-  label,
-}: {
-  checked: boolean;
-  onPress: () => void;
-  label: string;
-}) {
-  return (
-    <Pressable onPress={onPress} style={styles.checkRow}>
-      <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
-        <Text
-          style={[
-            styles.checkboxMark,
-            checked && styles.checkboxMarkChecked,
-          ]}
-        >
-          {checked ? '✓' : ''}
-        </Text>
-      </View>
-      <Text style={styles.checkLabel}>{label}</Text>
-    </Pressable>
-  );
-}
+type WalletContextValue = {
+  status: WalletStatus;
+  busy: boolean;
+  refreshing: boolean;
+  error: string | null;
+  balance: BalanceView | null;
+  address: string | null;
+  boardingAddress: string | null;
+  network: NetworkConfig;
+  clearError: () => void;
+  /** Devuelve el resultado del guardado (degradación incluida). */
+  createWallet: (options: CreateWalletOptions) => Promise<SaveResult>;
+  /** Acepta passphrase para wallets guardadas en modo passphrase. */
+  unlock: (options?: UnlockOptions) => Promise<void>;
+  lock: () => Promise<void>;
+  wipe: () => Promise<void>;
+  refresh: () => Promise<void>;
+  sendPayment: (
+    destination: string,
+    amountSats: number,
+    maxFeeSats: number
+  ) => Promise<SendOutcome>;
+  createInvoice: (amountSats: number) => Promise<{
+    id: string;
+    invoice: string;
+  }>;
+  watchOutcome: (
+    swapId: string,
+    onOutcome: (outcome: string) => void
+  ) => () => void;
+};
 
-const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-  },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  logo: {
-    color: colors.primary,
-    fontSize: 26,
-  },
-  segment: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 4,
-    gap: 4,
-  },
-  segmentButton: {
-    flex: 1,
-    textAlign: 'center',
-    color: colors.textMuted,
-    fontWeight: '700',
-    paddingVertical: 10,
-    borderRadius: 9,
-    overflow: 'hidden',
-  },
-  segmentButtonActive: {
-    backgroundColor: colors.surfaceAlt,
-    color: colors.text,
-  },
-  words: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    paddingVertical: spacing.sm,
-  },
-  word: {
-    width: '47%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: 8,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 8,
-  },
-  wordIndex: {
-    color: colors.textMuted,
-    fontSize: 11,
-    width: 16,
-    textAlign: 'right',
-  },
-  wordText: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  checkRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    paddingVertical: spacing.sm,
-  },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surfaceAlt,
-  },
-  checkboxChecked: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  checkboxMark: {
-    color: colors.primaryText,
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  checkboxMarkChecked: {
-    color: colors.primaryText,
-  },
-  checkLabel: {
-    flex: 1,
-    color: colors.text,
-    fontSize: 14,
-    lineHeight: 20,
-  },
+const WalletContext = createContext<WalletContextValue | null>(null);
+
+/** Tras este tiempo en segundo plano la wallet se bloquea. */
+const RELOCK_AFTER_MS = 2 * 60 * 1000;
+
+const toBalanceView = (raw: WalletBalance): BalanceView => ({
+  available: raw.available,
+  settled: raw.settled,
+  preconfirmed: raw.preconfirmed,
+  recoverable: raw.recoverable,
+  boarding: raw.boarding.total,
 });
+
+export function WalletProvider({ children }: { children: ReactNode }) {
+  const [status, setStatus] = useState<WalletStatus>('loading');
+  const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [balance, setBalance] = useState<BalanceView | null>(null);
+  const [address, setAddress] = useState<string | null>(null);
+  const [boardingAddress, setBoardingAddress] = useState<string | null>(null);
+
+  const mnemonicRef = useRef<string | null>(null);
+  const statusRef = useRef<WalletStatus>('loading');
+  const backgroundAtRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const exists = await hasStoredWallet();
+      if (!cancelled) setStatus(exists ? 'locked' : 'empty');
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const resetState = useCallback(() => {
+    setBalance(null);
+    setAddress(null);
+    setBoardingAddress(null);
+    setError(null);
+  }, []);
+
+  const ensureSession = useCallback(async () => {
+    try {
+      return getArkadeSession();
+    } catch {
+      const mnemonic = mnemonicRef.current;
+      if (!mnemonic) {
+        throw new Error('La billetera está bloqueada.');
+      }
+      return openArkadeSession(mnemonic);
+    }
+  }, []);
+
+  const connect = useCallback(async () => {
+    const session = await ensureSession();
+    const [nextAddress, nextBoardingAddress, rawBalance] = await Promise.all([
+      session.wallet.getAddress(),
+      session.wallet.getBoardingAddress(),
+      session.wallet.getBalance(),
+    ]);
+    setAddress(nextAddress);
+    setBoardingAddress(nextBoardingAddress);
+    setBalance(toBalanceView(rawBalance));
+  }, [ensureSession]);
+
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await connect();
+      setError(null);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setRefreshing(false);
+    }
+  }, [connect]);
+
+  const createWallet = useCallback(
+    async (options: CreateWalletOptions): Promise<SaveResult> => {
+      const phrase = normalizeMnemonic(options.mnemonic);
+      if (!isValidMnemonic(phrase)) {
+        throw new Error('La frase de recuperación no es válida.');
+      }
+
+      setBusy(true);
+      setError(null);
+      try {
+        const result = await saveWalletMnemonic(phrase, {
+          mode: options.mode,
+          passphrase: options.passphrase,
+        });
+        mnemonicRef.current = phrase;
+        setStatus('unlocked');
+        statusRef.current = 'unlocked';
+
+        try {
+          await connect();
+        } catch (err) {
+          // La wallet existe y está desbloqueada; el error es de red.
+          setError(errorMessage(err));
+        }
+        return result;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [connect]
+  );
+
+  const unlock = useCallback(
+    async (options?: UnlockOptions) => {
+      setBusy(true);
+      setError(null);
+      try {
+        const mnemonic = await loadWalletMnemonic({
+          passphrase: options?.passphrase,
+        });
+        mnemonicRef.current = mnemonic;
+        setStatus('unlocked');
+        statusRef.current = 'unlocked';
+
+        try {
+          await connect();
+        } catch (err) {
+          setError(errorMessage(err));
+        }
+      } catch (err) {
+        setError(errorMessage(err));
+        throw err;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [connect]
+  );
+
+  const lock = useCallback(async () => {
+    mnemonicRef.current = null;
+    await closeArkadeSession();
+    resetState();
+    setStatus('locked');
+    statusRef.current = 'locked';
+  }, [resetState]);
+
+  const wipe = useCallback(async () => {
+    setBusy(true);
+    try {
+      mnemonicRef.current = null;
+      await closeArkadeSession();
+      await deleteWalletSecrets();
+      await forgetLnurlSecrets();
+      await wipeStorageDatabases();
+      resetState();
+      setStatus('empty');
+      statusRef.current = 'empty';
+    } finally {
+      setBusy(false);
+    }
+  }, [resetState]);
+
+  const sendPayment = useCallback(
+    async (destination: string, amountSats: number, maxFeeSats: number) => {
+      const session = await ensureSession();
+      const target = destination.trim();
+      if (!target) throw new Error('Indica un destino.');
+
+      if (isArkadeAddress(target)) {
+        if (amountSats <= 0) {
+          throw new Error('Indica cuántos sats quieres enviar.');
+        }
+        const txid = await session.wallet.send({
+          recipients: [
+            { address: target, amount: Math.floor(amountSats) },
+          ],
+        });
+        await refresh();
+        return { kind: 'arkade' as const, txid };
+      }
+
+      const result = await payThroughSolver(target, amountSats, maxFeeSats);
+      await refresh();
+      return result;
+    },
+    [ensureSession, refresh]
+  );
+
+  const createInvoice = useCallback(
+    async (amountSats: number) => {
+      await ensureSession();
+      if (amountSats <= 0) {
+        throw new Error('Indica cuántos sats quieres recibir.');
+      }
+      return receiveLightning(amountSats);
+    },
+    [ensureSession]
+  );
+
+  const watchOutcome = useCallback(
+    (swapId: string, onOutcome: (outcome: string) => void) =>
+      watchSwap(swapId, onOutcome),
+    []
+  );
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener(
+      'change',
+      (nextState: AppStateStatus) => {
+        if (nextState === 'background' || nextState === 'inactive') {
+          if (backgroundAtRef.current === null) {
+            backgroundAtRef.current = Date.now();
+          }
+          return;
+        }
+
+        if (nextState === 'active') {
+          const since = backgroundAtRef.current;
+          backgroundAtRef.current = null;
+          if (
+            since !== null &&
+            Date.now() - since > RELOCK_AFTER_MS &&
+            statusRef.current === 'unlocked'
+          ) {
+            void lock();
+          }
+        }
+      }
+    );
+
+    return () => subscription.remove();
+  }, [lock]);
+
+  const value: WalletContextValue = {
+    status,
+    busy,
+    refreshing,
+    error,
+    balance,
+    address,
+    boardingAddress,
+    network: ACTIVE_NETWORK,
+    clearError: () => setError(null),
+    createWallet,
+    unlock,
+    lock,
+    wipe,
+    refresh,
+    sendPayment,
+    createInvoice,
+    watchOutcome,
+  };
+
+  return (
+    <WalletContext.Provider value={value}>{children}</WalletContext.Provider>
+  );
+}
+
+export function useWallet(): WalletContextValue {
+  const context = useContext(WalletContext);
+  if (!context) {
+    throw new Error('useWallet debe usarse dentro de WalletProvider.');
+  }
+  return context;
+}
