@@ -50,7 +50,41 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platform-tools platforms;android-36 build-tools;36.1.0 ndk;27.1.12297006'
+          packages: 'platform-tools'
+
+      - name: Install Android SDK packages
+        run: |
+          set -euo pipefail
+
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/16.0/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(command -v sdkmanager)"
+          fi
+          echo "Using sdkmanager: $SDKMANAGER"
+          "$SDKMANAGER" --version || true
+
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "platform-tools" "ndk;27.1.12297006" > /dev/null
+
+          SDK37=0
+          if "$SDKMANAGER" "platforms;android-37" "build-tools;37.0.0" > /dev/null 2>&1; then
+            SDK37=1
+          elif "$SDKMANAGER" --channel=3 "platforms;android-37" "build-tools;37.0.0" > /dev/null 2>&1; then
+            SDK37=1
+          fi
+
+          if [ "$SDK37" = "1" ]; then
+            echo "Android SDK 37 installed"
+            echo "ANDROID_COMPILE_SDK=37" >> "$GITHUB_ENV"
+            echo "ANDROID_BUILD_TOOLS=37.0.0" >> "$GITHUB_ENV"
+          else
+            echo "::warning::android-37 is not available; compiling against 36 and disabling AAR compileSdk checks"
+            "$SDKMANAGER" "platforms;android-36" "build-tools;36.1.0" > /dev/null
+            echo "ANDROID_COMPILE_SDK=36" >> "$GITHUB_ENV"
+            echo "ANDROID_BUILD_TOOLS=36.1.0" >> "$GITHUB_ENV"
+            echo "ANDROID_DISABLE_SDK_CHECKS=-Pandroid.experimental.disableCompileSdkChecks=true" >> "$GITHUB_ENV"
+          fi
 
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@v4
@@ -71,7 +105,10 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace
+          ./gradlew assembleRelease --no-daemon --stacktrace \
+            -Pandroid.compileSdkVersion="$ANDROID_COMPILE_SDK" \
+            -Pandroid.buildToolsVersion="$ANDROID_BUILD_TOOLS" \
+            ${ANDROID_DISABLE_SDK_CHECKS:-}
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
