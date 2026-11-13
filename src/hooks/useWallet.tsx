@@ -96,7 +96,15 @@ const toBalanceView = (raw: WalletBalance): BalanceView => ({
   preconfirmed: raw.preconfirmed,
   recoverable: raw.recoverable,
   boarding: raw.boarding.total,
+  boardingConfirmed: raw.boarding.confirmed,
+  boardingUnconfirmed: raw.boarding.unconfirmed,
 });
+
+/** Cada cuánto se refresca el saldo mientras la app está en primer plano. */
+const BALANCE_POLL_MS = 30 * 1000;
+
+/** Espera tras un aviso de fondos para dejar que el indexer actualice su caché. */
+const INCOMING_DEBOUNCE_MS = 1200;
 
 export function WalletProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<WalletStatus>('loading');
@@ -107,12 +115,18 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [address, setAddress] = useState<string | null>(null);
   const [boardingAddress, setBoardingAddress] = useState<string | null>(null);
   const [history, setHistory] = useState<ArkTransaction[]>([]);
+  const [sessionReady, setSessionReady] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [biometricAvailable] = useState(() => canUseBiometrics());
 
   const mnemonicRef = useRef<string | null>(null);
   const statusRef = useRef<WalletStatus>('loading');
   const backgroundAtRef = useRef<number | null>(null);
+  const appStateRef = useRef<AppStateStatus>(
+    (AppState.currentState ?? 'active') as AppStateStatus
+  );
+  const stopIncomingRef = useRef<(() => void) | null>(null);
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     statusRef.current = status;
@@ -139,6 +153,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setAddress(null);
     setBoardingAddress(null);
     setHistory([]);
+    setSessionReady(false);
     setError(null);
   }, []);
 
@@ -173,6 +188,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     } catch {
       // El historial es secundario: no debe tumbar la sincronización.
     }
+
+    setSessionReady(true);
   }, [ensureSession]);
 
   const refresh = useCallback(async () => {
@@ -186,6 +203,33 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       setRefreshing(false);
     }
   }, [connect]);
+
+  /**
+   * Sincroniza saldo e historial sin mostrar el spinner de pull-to-refresh.
+   * La usan el polling y los avisos del SDK.
+   */
+  const syncBalance = useCallback(async () => {
+    try {
+      await connect();
+    } catch {
+      // Un fallo de red transitorio no debe borrar el saldo ya mostrado.
+    }
+  }, [connect]);
+
+  /** Agrupa ráfagas de eventos (p. ej. utxo + vtxo del mismo depósito). */
+  const scheduleSync = useCallback(() => {
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(() => {
+      syncTimerRef.current = null;
+      void syncBalance();
+    }, INCOMING_DEBOUNCE_MS);
+  }, [syncBalance]);
+
+  const stopIncomingWatcher = useCallback(() => {
+    const stop = stopIncomingRef.current;
+    stopIncomingRef.current = null;
+    stop?.();
+  }, []);
 
   const createWallet = useCallback(
     async ({
@@ -261,16 +305,26 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const lock = useCallback(async () => {
     mnemonicRef.current = null;
+    stopIncomingWatcher();
+    if (syncTimerRef.current) {
+      clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = null;
+    }
     await closeArkadeSession();
     resetState();
     setStatus('locked');
     statusRef.current = 'locked';
-  }, [resetState]);
+  }, [resetState, stopIncomingWatcher]);
 
   const wipe = useCallback(async () => {
     setBusy(true);
     try {
       mnemonicRef.current = null;
+      stopIncomingWatcher();
+      if (syncTimerRef.current) {
+        clearTimeout(syncTimerRef.current);
+        syncTimerRef.current = null;
+      }
       await closeArkadeSession();
       await deleteWalletSecrets();
       await forgetLnurlSecrets();
@@ -282,7 +336,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     } finally {
       setBusy(false);
     }
-  }, [resetState]);
+  }, [resetState, stopIncomingWatcher]);
 
   const sendPayment = useCallback(
     async (destination: string, amountSats: number, maxFeeSats: number) => {
@@ -329,10 +383,54 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const revealMnemonic = useCallback(() => mnemonicRef.current, []);
 
+  /**
+   * El SDK emite avisos de fondos nuevos (boarding y virtual outputs) mientras
+   * la wallet está viva. Refrescamos para que el saldo no dependa de que el
+   * usuario haga pull-to-refresh.
+   */
+  useEffect(() => {
+    if (status !== 'unlocked' || !sessionReady) {
+      stopIncomingWatcher();
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const session = await ensureSession();
+        const stop = await session.wallet.notifyIncomingFunds(() => {
+          scheduleSync();
+        });
+        if (cancelled) {
+          stop();
+          return;
+        }
+        stopIncomingRef.current = stop;
+      } catch {
+        // Si el SSE no está disponible, el polling sigue cubriendo el saldo.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      stopIncomingWatcher();
+    };
+  }, [status, sessionReady, ensureSession, scheduleSync, stopIncomingWatcher]);
+
+  /** Red de seguridad: el SSE puede caerse al cambiar de red o de pantalla. */
+  useEffect(() => {
+    if (status !== 'unlocked' || !sessionReady) return;
+    const timer = setInterval(() => {
+      if (appStateRef.current === 'active') void syncBalance();
+    }, BALANCE_POLL_MS);
+    return () => clearInterval(timer);
+  }, [status, sessionReady, syncBalance]);
+
   useEffect(() => {
     const subscription = AppState.addEventListener(
       'change',
       (nextState: AppStateStatus) => {
+        appStateRef.current = nextState;
         if (nextState === 'background' || nextState === 'inactive') {
           if (backgroundAtRef.current === null) {
             backgroundAtRef.current = Date.now();
@@ -349,13 +447,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             statusRef.current === 'unlocked'
           ) {
             void lock();
+            return;
           }
+          if (statusRef.current === 'unlocked') void syncBalance();
         }
       }
     );
 
     return () => subscription.remove();
-  }, [lock]);
+  }, [lock, syncBalance]);
 
   const value: WalletContextValue = {
     status,

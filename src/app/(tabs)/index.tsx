@@ -50,6 +50,20 @@ export default function WalletScreen() {
               <Text style={styles.balanceUnit}>sats</Text>
             </View>
             <Text style={styles.fiat}>≈ {formatBtc(balance.available)} BTC</Text>
+            {balance.boarding > 0 ? (
+              <View style={styles.boarding}>
+                <Text style={styles.boardingTitle}>
+                  ⏳ Boarding pendiente: {formatSats(balance.boarding)} sats
+                </Text>
+                <Text style={styles.boardingText}>
+                  {balance.boardingUnconfirmed > 0
+                    ? `${formatSats(balance.boardingUnconfirmed)} sats sin confirmar.`
+                    : `${formatSats(balance.boardingConfirmed)} sats confirmados, en cola de liquidación.`}
+                  {' '}Al confirmarse se convierten en saldo Arkade
+                  automáticamente.
+                </Text>
+              </View>
+            ) : null}
           </>
         ) : (
           <View style={styles.loading}>
@@ -143,6 +157,24 @@ const styles = StyleSheet.create({
   fiat: {
     color: colors.textMuted,
     fontSize: 14,
+  },
+  boarding: {
+    backgroundColor: 'rgba(244, 201, 93, 0.12)',
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.warning,
+    padding: spacing.sm,
+    gap: 2,
+  },
+  boardingTitle: {
+    color: colors.warning,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  boardingText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
   },
   actions: {
     flexDirection: 'row',

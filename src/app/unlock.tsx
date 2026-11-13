@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
 import {
   Badge,
@@ -21,7 +21,6 @@ export default function UnlockScreen() {
     status,
     busy,
     unlock,
-    wipe,
     network,
     error,
     biometricAvailable,
@@ -55,29 +54,6 @@ export default function UnlockScreen() {
     } catch (err) {
       setLocalError(errorMessage(err));
     }
-  };
-
-  const onWipe = () => {
-    Alert.alert(
-      'Eliminar billetera',
-      'Se borrarán la frase y las bases de datos locales de este dispositivo. Sin la frase de recuperación, los fondos se pierden. ¿Continuar?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: () => {
-            void (async () => {
-              try {
-                await wipe();
-              } catch (err) {
-                setLocalError(errorMessage(err));
-              }
-            })();
-          },
-        },
-      ]
-    );
   };
 
   const canUseBiometricsButton = biometricAvailable && biometricEnabled;
@@ -126,12 +102,6 @@ export default function UnlockScreen() {
             disabled={busy}
           />
         ) : null}
-        <Button
-          title="Eliminar billetera de este dispositivo"
-          variant="danger"
-          onPress={onWipe}
-          disabled={busy}
-        />
       </Card>
 
       {!biometricAvailable ? (
