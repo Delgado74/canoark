@@ -15,7 +15,7 @@ export default function IndexScreen() {
     );
   }
 
-  if (status === 'empty') return <Redirect href="/onboarding" />;
+  if (status === 'empty') return <Redirect href="/welcome" />;
   if (status === 'locked') return <Redirect href="/unlock" />;
   return <Redirect href="/(tabs)" />;
 }

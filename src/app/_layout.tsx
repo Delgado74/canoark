@@ -15,7 +15,11 @@ export default function RootLayout() {
         }}
       >
         <Stack.Screen name="index" />
-        <Stack.Screen name="onboarding" />
+        <Stack.Screen name="welcome" />
+        <Stack.Screen name="create" />
+        <Stack.Screen name="restore" />
+        <Stack.Screen name="send" />
+        <Stack.Screen name="receive" />
         <Stack.Screen name="unlock" />
         <Stack.Screen name="(tabs)" />
       </Stack>

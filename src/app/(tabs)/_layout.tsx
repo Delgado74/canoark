@@ -5,7 +5,11 @@ import { useWallet } from '../../hooks/useWallet';
 
 const icon = (glyph: string) =>
   function TabIcon({ color, size }: { color: ColorValue; size: number }) {
-    return <Text style={{ color, fontSize: size - 2 }}>{glyph}</Text>;
+    return (
+      <Text style={{ color, fontSize: size - 2, lineHeight: size + 2 }}>
+        {glyph}
+      </Text>
+    );
   };
 
 export default function TabsLayout() {
@@ -13,7 +17,7 @@ export default function TabsLayout() {
 
   if (status === 'loading') return null;
   if (status === 'locked') return <Redirect href="/unlock" />;
-  if (status === 'empty') return <Redirect href="/onboarding" />;
+  if (status === 'empty') return <Redirect href="/welcome" />;
 
   return (
     <Tabs
@@ -25,7 +29,7 @@ export default function TabsLayout() {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          height: 64,
+          height: 62,
           paddingTop: spacing.xs,
           paddingBottom: spacing.sm,
         },
@@ -42,16 +46,12 @@ export default function TabsLayout() {
         options={{ title: 'Billetera', tabBarIcon: icon('◈') }}
       />
       <Tabs.Screen
-        name="send"
-        options={{ title: 'Enviar', tabBarIcon: icon('↑') }}
-      />
-      <Tabs.Screen
-        name="receive"
-        options={{ title: 'Recibir', tabBarIcon: icon('↓') }}
+        name="history"
+        options={{ title: 'Historial', tabBarIcon: icon('🕘') }}
       />
       <Tabs.Screen
         name="settings"
-        options={{ title: 'Ajustes', tabBarIcon: icon('⚙') }}
+        options={{ title: 'Configuración', tabBarIcon: icon('⚙') }}
       />
     </Tabs>
   );

@@ -31,7 +31,7 @@ export default function UnlockScreen() {
   const [passphrase, setPassphrase] = useState('');
 
   if (status === 'unlocked') return <Redirect href="/(tabs)" />;
-  if (status === 'empty') return <Redirect href="/onboarding" />;
+  if (status === 'empty') return <Redirect href="/welcome" />;
 
   const onUnlockWithPassphrase = async () => {
     setLocalError(null);
@@ -98,8 +98,7 @@ export default function UnlockScreen() {
       >
         <Text style={styles.lockIcon}>🔒</Text>
         <Paragraph muted>
-          Tu frase está cifrada con tu passphrase. Se descifra solo en este
-          dispositivo y nunca se guarda en texto plano.
+          Escribe tu passphrase para descifrar la billetera en este dispositivo.
         </Paragraph>
         {localError ? <ErrorBanner message={localError} /> : null}
         {!localError && error ? <ErrorBanner message={error} /> : null}
@@ -137,9 +136,8 @@ export default function UnlockScreen() {
 
       {!biometricAvailable ? (
         <Notice tone="info">
-          Este dispositivo no ofrece biometría compatible con el almacenamiento
-          seguro, así que el desbloqueo siempre usa la passphrase. Es el
-          comportamiento esperado en Android 10.
+          Este dispositivo no ofrece biometría compatible. Desbloquea con tu
+          passphrase.
         </Notice>
       ) : null}
     </Screen>

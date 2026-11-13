@@ -90,7 +90,24 @@ require('expo-router/entry');
 Debe ser `require`, no `import`: los imports se hoistean y se evaluarían antes
 del polyfill.
 
-## 4. Seguridad de la mnemónica
+## 4. Pantallas y navegación
+
+- `welcome.tsx`: bienvenida con el icono de la app y las opciones **Nueva
+  billetera** y **Restaurar billetera**.
+- `create.tsx`: muestra la seed, pide confirmación, biometría (si está
+  disponible) y passphrase.
+- `restore.tsx`: entrada de la seed, biometría opcional y passphrase.
+- `unlock.tsx`: passphrase y, si existe, desbloqueo biométrico.
+- Pestañas inferiores: **Billetera**, **Historial** y **Configuración**.
+  - Billetera: saldo disponible y botones **Recibir** / **Enviar**.
+  - Historial: `wallet.getTransactionHistory()`.
+  - Configuración: menú por secciones (General, Seguridad, Avanzado) con filas
+    expandibles, al estilo de Arkade Wallet.
+- `receive.tsx` y `send.tsx` son pantallas de pila, no pestañas. Recibir tiene
+  pestañas **Arkade / Lightning / Onchain**, QR por dirección y botones
+  Copiar / Compartir / Añadir fondos.
+
+## 5. Seguridad de la mnemónica
 
 - Se genera con `@scure/bip39` (12 palabras, 128 bits).
 - La passphrase es obligatoria (mínimo 8 caracteres) y nunca se guarda en claro.
@@ -119,7 +136,7 @@ La app se bloquea automáticamente tras 2 minutos en segundo plano, medidos con
 `AppState`. Al bloquear se cierra la sesión del SDK y se borra la mnemónica de
 memoria.
 
-## 5. Persistencia con SQLite
+## 6. Persistencia con SQLite
 
 `src/lib/storage/sqlite.ts` adapta `expo-sqlite` a la interfaz `SQLExecutor`
 del SDK:
@@ -146,7 +163,7 @@ aunque la app se reinicie.
 `wipeStorageDatabases()` cierra las conexiones y llama a
 `SQLite.deleteDatabaseAsync()`. Debe ejecutarse después de cerrar la sesión.
 
-## 6. Enviar pagos
+## 7. Enviar pagos
 
 Hay dos caminos:
 
@@ -189,7 +206,7 @@ La app mantiene el cliente de swaps vivo y escucha `onUpdate()` para reclamar,
 reembolsar o mostrar el estado final. Si el solver no paga, el lockup se
 reembolsa al vencer `refundLocktime`.
 
-## 7. Recibir Lightning
+## 8. Recibir Lightning
 
 Para una factura normal:
 
@@ -228,7 +245,7 @@ const swap = await swaps.accept(quote);
 
 `accept()` no aplica el techo de comisión, así que la comprobación se hace antes.
 
-## 8. Lightning Address (LNURL)
+## 9. Lightning Address (LNURL)
 
 Se configura con:
 
@@ -265,7 +282,7 @@ offline sigue funcionando por la dirección Arkade registrada.
 La sesión SSE solo vive en primer plano. Para cobrar con la app cerrada, el
 servidor LNURL usa la dirección Arkade registrada.
 
-## 9. Renovación, expiración y segundo plano
+## 10. Renovación, expiración y segundo plano
 
 Los outputs virtuales expiran. `settlementConfig.vtxoThreshold` define con
 cuánta antelación se renuevan; CanoArk usa 3 días (259 200 s).
@@ -279,7 +296,7 @@ La billetera se bloquea a los 2 minutos en segundo plano. Esto cierra la sesión
 y detiene la renovación; es un intercambio deliberado entre seguridad y
 operación desatendida.
 
-## 10. Compilar en local
+## 11. Compilar en local
 
 ### Requisitos
 
@@ -316,7 +333,7 @@ El directorio `android/` está en `.gitignore` porque se regenera con prebuild.
 Si editas código nativo, guarda los cambios en un config plugin o script, no
 solo en `android/`.
 
-## 11. Firma del APK
+## 12. Firma del APK
 
 Sin keystore propio, Gradle firma el release con el keystore de debug del SDK.
 Es instalable, pero no apto para publicar.
@@ -348,7 +365,7 @@ npm run android:release
 Nunca subas el `.jks`, las contraseñas ni el `android/` generado al
 repositorio.
 
-## 12. GitHub Actions
+## 13. GitHub Actions
 
 `.github/workflows/build-apk.yml`:
 
@@ -373,7 +390,7 @@ Secretos opcionales de firma:
 - `ANDROID_KEY_ALIAS`
 - `ANDROID_KEY_PASSWORD`
 
-## 13. Problemas frecuentes
+## 14. Problemas frecuentes
 
 ### La descarga de Gradle falla con timeout o 403
 
@@ -436,7 +453,7 @@ Sin sesión SSE activa el servidor no puede pedir facturas. Mantén la pestaña
 Recibir abierta con la sesión iniciada, o usa la dirección Arkade registrada
 para pagos offline.
 
-## 14. Referencia de flujos de la PWA
+## 15. Referencia de flujos de la PWA
 
 La PWA oficial `arkade-os/wallet` se consultó solo para entender flujos de
 usuario (onboarding, envío, recepción, ajustes). No se copió código. La

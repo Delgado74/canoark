@@ -161,6 +161,77 @@ export function Row({
   );
 }
 
+export function SectionLabel({ children }: { children: ReactNode }) {
+  return <Text style={styles.sectionLabel}>{children}</Text>;
+}
+
+export function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <View style={styles.segmented}>
+      {options.map(option => {
+        const active = option.value === value;
+        return (
+          <Pressable
+            key={option.value}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: active }}
+            onPress={() => onChange(option.value)}
+            style={[styles.segment, active && styles.segmentActive]}
+          >
+            <Text
+              style={[styles.segmentLabel, active && styles.segmentLabelActive]}
+              numberOfLines={1}
+            >
+              {option.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+export function MenuRow({
+  icon,
+  label,
+  value,
+  expanded = false,
+  onPress,
+}: {
+  icon?: string;
+  label: string;
+  value?: string;
+  expanded?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.menuRow, pressed && styles.pressed]}
+    >
+      {icon ? <Text style={styles.menuIcon}>{icon}</Text> : null}
+      <Text style={styles.menuLabel}>{label}</Text>
+      {value ? (
+        <Text style={styles.menuValue} numberOfLines={1}>
+          {value}
+        </Text>
+      ) : null}
+      <Text style={[styles.menuChevron, expanded && styles.menuChevronOpen]}>
+        ›
+      </Text>
+    </Pressable>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* Inputs                                                              */
 /* ------------------------------------------------------------------ */
@@ -314,6 +385,9 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
   },
   content: {
+    width: '100%',
+    maxWidth: 560,
+    alignSelf: 'center',
     padding: spacing.md,
     gap: spacing.md,
   },
@@ -404,6 +478,79 @@ const styles = StyleSheet.create({
   mono: {
     fontFamily: 'monospace',
     fontSize: 12,
+  },
+  sectionLabel: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    paddingHorizontal: spacing.xs,
+    paddingTop: spacing.sm,
+  },
+  segmented: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 4,
+    gap: 4,
+  },
+  segment: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+  },
+  segmentActive: {
+    backgroundColor: colors.surfaceAlt,
+  },
+  segmentLabel: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  segmentLabelActive: {
+    color: colors.text,
+  },
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    minHeight: 48,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surface,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  menuIcon: {
+    width: 24,
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  menuLabel: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  menuValue: {
+    color: colors.textMuted,
+    fontSize: 13,
+    maxWidth: '45%',
+    textAlign: 'right',
+  },
+  menuChevron: {
+    color: colors.textMuted,
+    fontSize: 20,
+    fontWeight: '700',
+    marginLeft: 2,
+  },
+  menuChevronOpen: {
+    transform: [{ rotate: '90deg' }],
   },
   field: {
     gap: spacing.xs,

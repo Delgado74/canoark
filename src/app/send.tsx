@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
 import {
   Badge,
   Button,
@@ -10,16 +11,16 @@ import {
   Paragraph,
   Screen,
   Title,
-} from '../../components/ui';
-import { colors, spacing } from '../../constants/theme';
-import { useWallet } from '../../hooks/useWallet';
+} from '../components/ui';
+import { colors, spacing } from '../constants/theme';
+import { useWallet } from '../hooks/useWallet';
 import {
   isArkadeAddress,
   isLightningInvoice,
   isOnchainAddress,
   swapErrorMessage,
-} from '../../lib/arkade/lightning';
-import { errorMessage, formatSats, satsFromInput, shorten } from '../../lib/format';
+} from '../lib/arkade/lightning';
+import { errorMessage, formatSats, satsFromInput, shorten } from '../lib/format';
 
 type DestinationKind = 'lightning' | 'onchain' | 'arkade' | 'unknown';
 
@@ -183,6 +184,9 @@ export default function SendScreen() {
 
   return (
     <Screen>
+      <Pressable onPress={() => router.back()} style={styles.back}>
+        <Text style={styles.backText}>‹ Volver</Text>
+      </Pressable>
       <View style={styles.header}>
         <Title>Enviar</Title>
         <Badge
@@ -192,11 +196,6 @@ export default function SendScreen() {
           tone="neutral"
         />
       </View>
-
-      <Paragraph muted>
-        Paga una factura Lightning, una dirección Bitcoin onchain o una
-        dirección Arkade. Los pagos fuera de Arkade los ejecuta un solver.
-      </Paragraph>
 
       {localError ? <ErrorBanner message={localError} /> : null}
 
@@ -280,17 +279,23 @@ export default function SendScreen() {
       ) : null}
 
       <Notice tone="warning">
-        Verifica la red antes de enviar: esta billetera está configurada para{' '}
-        <Text style={styles.strong}>
-          {balance ? 'la red activa' : 'la red activa'}
-        </Text>
-        . Una dirección de otra red es rechazada por el SDK o el solver.
+        Verifica la red antes de enviar. Una dirección de otra red será
+        rechazada.
       </Notice>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  back: {
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+  },
+  backText: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

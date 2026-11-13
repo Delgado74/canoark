@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import type { PayResult } from '@arkade-os/swap';
-import type { WalletBalance } from '@arkade-os/sdk';
+import type { ArkTransaction, WalletBalance } from '@arkade-os/sdk';
 import { ACTIVE_NETWORK, type NetworkConfig } from '../constants/network';
 import type { BalanceView } from '../types/wallet';
 import { closeArkadeSession, getArkadeSession, openArkadeSession } from '../lib/arkade/client';
@@ -49,6 +49,7 @@ type WalletContextValue = {
   balance: BalanceView | null;
   address: string | null;
   boardingAddress: string | null;
+  history: ArkTransaction[];
   network: NetworkConfig;
   /** true si este dispositivo puede usar biometría con SecureStore (Class 3). */
   biometricAvailable: boolean;
@@ -80,6 +81,8 @@ type WalletContextValue = {
     swapId: string,
     onOutcome: (outcome: string) => void
   ) => () => void;
+  /** Solo disponible con la billetera desbloqueada. */
+  revealMnemonic: () => string | null;
 };
 
 const WalletContext = createContext<WalletContextValue | null>(null);
@@ -103,6 +106,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [balance, setBalance] = useState<BalanceView | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [boardingAddress, setBoardingAddress] = useState<string | null>(null);
+  const [history, setHistory] = useState<ArkTransaction[]>([]);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [biometricAvailable] = useState(() => canUseBiometrics());
 
@@ -134,6 +138,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setBalance(null);
     setAddress(null);
     setBoardingAddress(null);
+    setHistory([]);
     setError(null);
   }, []);
 
@@ -159,6 +164,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setAddress(nextAddress);
     setBoardingAddress(nextBoardingAddress);
     setBalance(toBalanceView(rawBalance));
+
+    try {
+      const transactions = await session.wallet.getTransactionHistory();
+      setHistory(
+        [...transactions].sort((a, b) => b.createdAt - a.createdAt)
+      );
+    } catch {
+      // El historial es secundario: no debe tumbar la sincronización.
+    }
   }, [ensureSession]);
 
   const refresh = useCallback(async () => {
@@ -313,6 +327,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  const revealMnemonic = useCallback(() => mnemonicRef.current, []);
+
   useEffect(() => {
     const subscription = AppState.addEventListener(
       'change',
@@ -349,6 +365,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     balance,
     address,
     boardingAddress,
+    history,
     network: ACTIVE_NETWORK,
     biometricAvailable,
     biometricEnabled,
@@ -361,6 +378,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     sendPayment,
     createInvoice,
     watchOutcome,
+    revealMnemonic,
   };
 
   return (

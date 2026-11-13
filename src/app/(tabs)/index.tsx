@@ -2,124 +2,102 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import {
   Badge,
-  Balance,
   Button,
   Card,
-  CopyField,
   ErrorBanner,
-  Notice,
-  Paragraph,
-  Row,
   Screen,
-  Title,
 } from '../../components/ui';
 import { colors, spacing } from '../../constants/theme';
 import { useWallet } from '../../hooks/useWallet';
-import { formatBtc, formatSats, shorten } from '../../lib/format';
+import { formatBtc, formatSats } from '../../lib/format';
+import {
+  TransactionRow,
+  transactionKey,
+} from '../../components/TransactionRow';
 
 export default function WalletScreen() {
   const {
     balance,
-    address,
-    boardingAddress,
+    history,
     network,
     refresh,
     refreshing,
     error,
-    lock,
   } = useWallet();
 
   return (
     <Screen refreshing={refreshing} onRefresh={refresh}>
       <View style={styles.header}>
-        <View>
-          <Text style={styles.eyebrow}>Billetera Arkade</Text>
-          <Title>CanoArk</Title>
-        </View>
+        <Text style={styles.brand}>CanoArk</Text>
         <Badge label={network.label} tone="primary" />
       </View>
 
       {error ? <ErrorBanner message={error} /> : null}
 
       <Card>
-        <Text style={styles.eyebrow}>Disponible</Text>
+        <Text style={styles.eyebrow}>Saldo disponible</Text>
         {balance ? (
-          <Balance
-            sats={formatSats(balance.available)}
-            caption={`≈ ${formatBtc(balance.available)} BTC`}
-          />
+          <>
+            <View style={styles.balanceRow}>
+              <Text
+                style={styles.balanceValue}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.6}
+              >
+                {formatSats(balance.available)}
+              </Text>
+              <Text style={styles.balanceUnit}>sats</Text>
+            </View>
+            <Text style={styles.fiat}>≈ {formatBtc(balance.available)} BTC</Text>
+          </>
         ) : (
           <View style={styles.loading}>
             <ActivityIndicator color={colors.primary} />
-            <Text style={styles.muted}>Sincronizando con el operador…</Text>
+            <Text style={styles.muted}>Sincronizando…</Text>
           </View>
         )}
 
         <View style={styles.actions}>
           <View style={styles.action}>
             <Button
-              title="Enviar"
-              onPress={() => router.push('/send')}
+              title="Recibir"
+              onPress={() => router.push('/receive')}
             />
           </View>
           <View style={styles.action}>
             <Button
-              title="Recibir"
+              title="Enviar"
               variant="secondary"
-              onPress={() => router.push('/receive')}
+              onPress={() => router.push('/send')}
             />
           </View>
         </View>
       </Card>
 
-      {balance ? (
-        <Card title="Detalle del balance">
-          <Row label="Liquidado" value={`${formatSats(balance.settled)} sats`} />
-          <Row
-            label="Preconfirmado"
-            value={`${formatSats(balance.preconfirmed)} sats`}
-          />
-          <Row
-            label="Boarding onchain"
-            value={`${formatSats(balance.boarding)} sats`}
-          />
-          <Row
-            label="Recuperable"
-            value={`${formatSats(balance.recoverable)} sats`}
-          />
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Últimos movimientos</Text>
+        <Text
+          style={styles.sectionLink}
+          onPress={() => router.push('/(tabs)/history')}
+        >
+          Ver todo
+        </Text>
+      </View>
+
+      {history.length === 0 ? (
+        <Card>
           <Text style={styles.muted}>
-            «Disponible» es lo que puedes gastar ahora. Los outputs virtuales
-            se renuevan solos antes de expirar mientras la app está abierta.
+            Aún no hay movimientos. Recibe tus primeros sats para empezar.
           </Text>
         </Card>
-      ) : null}
-
-      <Card title="Recibir en Arkade">
-        {address ? (
-          <CopyField label="Dirección Arkade" value={address} />
-        ) : (
-          <Text style={styles.muted}>Generando dirección…</Text>
-        )}
-        {boardingAddress ? (
-          <CopyField
-            label="Boarding onchain"
-            value={boardingAddress}
-            displayValue={shorten(boardingAddress, 18, 14)}
-          />
-        ) : null}
-        <Paragraph muted>
-          Los pagos a tu dirección Arkade llegan al instante y sin comisión de
-          red. La dirección de boarding sirve para depositar desde Bitcoin
-          onchain.
-        </Paragraph>
-      </Card>
-
-      <Notice tone="info">
-        Red {network.label}. Operador: {network.operatorUrl}. Esta compilación
-        usa {network.isMainnet ? 'dinero real' : 'bitcoin de prueba'}.
-      </Notice>
-
-      <Button title="Bloquear billetera" variant="secondary" onPress={lock} />
+      ) : (
+        <View style={styles.list}>
+          {history.slice(0, 4).map(tx => (
+            <TransactionRow key={transactionKey(tx)} tx={tx} />
+          ))}
+        </View>
+      )}
     </Screen>
   );
 }
@@ -131,12 +109,40 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.md,
   },
+  brand: {
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+  },
   eyebrow: {
     color: colors.textMuted,
     fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.8,
+    fontWeight: '800',
+    letterSpacing: 1,
     textTransform: 'uppercase',
+  },
+  balanceRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: spacing.sm,
+  },
+  balanceValue: {
+    color: colors.text,
+    fontSize: 44,
+    fontWeight: '800',
+    letterSpacing: -1,
+    flexShrink: 1,
+  },
+  balanceUnit: {
+    color: colors.textMuted,
+    fontSize: 16,
+    fontWeight: '700',
+    paddingBottom: 9,
+  },
+  fiat: {
+    color: colors.textMuted,
+    fontSize: 14,
   },
   actions: {
     flexDirection: 'row',
@@ -152,9 +158,32 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingVertical: spacing.md,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: spacing.sm,
+  },
+  sectionTitle: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  sectionLink: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  list: {
+    backgroundColor: colors.surface,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
   muted: {
     color: colors.textMuted,
     fontSize: 13,
-    lineHeight: 18,
+    lineHeight: 19,
   },
 });
