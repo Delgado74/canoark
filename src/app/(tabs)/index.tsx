@@ -93,8 +93,8 @@ export default function WalletScreen() {
         </Card>
       ) : (
         <View style={styles.list}>
-          {history.slice(0, 4).map(tx => (
-            <TransactionRow key={transactionKey(tx)} tx={tx} />
+          {history.slice(0, 4).map((tx, index) => (
+            <TransactionRow key={`${transactionKey(tx)}-${index}`} tx={tx} />
           ))}
         </View>
       )}

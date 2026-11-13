@@ -28,8 +28,8 @@ export default function HistoryScreen() {
         </Card>
       ) : (
         <View style={styles.list}>
-          {history.map(tx => (
-            <TransactionRow key={transactionKey(tx)} tx={tx} />
+          {history.map((tx, index) => (
+            <TransactionRow key={`${transactionKey(tx)}-${index}`} tx={tx} />
           ))}
         </View>
       )}
