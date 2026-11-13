@@ -18,6 +18,7 @@ import { useWallet } from '../hooks/useWallet';
 import {
   generateWalletMnemonic,
   isValidMnemonic,
+  MIN_PASSPHRASE_LENGTH,
   normalizeMnemonic,
 } from '../lib/arkade/identity';
 import { errorMessage } from '../lib/format';
@@ -25,11 +26,14 @@ import { errorMessage } from '../lib/format';
 type Mode = 'create' | 'import';
 
 export default function OnboardingScreen() {
-  const { status, busy, createWallet } = useWallet();
+  const { status, busy, createWallet, biometricAvailable } = useWallet();
   const [mode, setMode] = useState<Mode>('create');
   const [mnemonic] = useState(() => generateWalletMnemonic());
   const [imported, setImported] = useState('');
   const [confirmed, setConfirmed] = useState(false);
+  const [passphrase, setPassphrase] = useState('');
+  const [passphraseConfirm, setPassphraseConfirm] = useState('');
+  const [useBiometrics, setUseBiometrics] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
   if (status === 'unlocked') return <Redirect href="/(tabs)" />;
@@ -51,9 +55,23 @@ export default function OnboardingScreen() {
       setLocalError('Confirma que guardaste la frase antes de continuar.');
       return;
     }
+    if (passphrase.length < MIN_PASSPHRASE_LENGTH) {
+      setLocalError(
+        `La passphrase debe tener al menos ${MIN_PASSPHRASE_LENGTH} caracteres.`
+      );
+      return;
+    }
+    if (passphrase !== passphraseConfirm) {
+      setLocalError('La passphrase y su confirmación no coinciden.');
+      return;
+    }
 
     try {
-      await createWallet(phrase);
+      await createWallet({
+        mnemonic: phrase,
+        passphrase,
+        useBiometrics: useBiometrics && biometricAvailable,
+      });
       router.replace('/(tabs)');
     } catch (error) {
       setLocalError(errorMessage(error));
@@ -67,6 +85,51 @@ export default function OnboardingScreen() {
       'No la pegues en chats ni la dejes en el portapapeles. Guárdala offline.'
     );
   };
+
+  const passphraseFields = (
+    <Card
+      title="Passphrase de desbloqueo"
+      subtitle="Cifra tu frase en este dispositivo. La necesitarás cada vez que abras CanoArk."
+    >
+      <Field
+        label="Passphrase"
+        value={passphrase}
+        onChangeText={setPassphrase}
+        placeholder={`Mínimo ${MIN_PASSPHRASE_LENGTH} caracteres`}
+        secureTextEntry
+        autoCapitalize="none"
+        autoCorrect={false}
+        autoComplete="off"
+      />
+      <Field
+        label="Confirmar passphrase"
+        value={passphraseConfirm}
+        onChangeText={setPassphraseConfirm}
+        placeholder="Repite la passphrase"
+        secureTextEntry
+        autoCapitalize="none"
+        autoCorrect={false}
+        autoComplete="off"
+      />
+      <Paragraph muted>
+        No se puede recuperar. Si la olvidas, necesitarás volver a importar la
+        frase de recuperación.
+      </Paragraph>
+    </Card>
+  );
+
+  const biometricFields = biometricAvailable ? (
+    <PressableCheck
+      checked={useBiometrics}
+      onPress={() => setUseBiometrics(value => !value)}
+      label="Desbloquear también con huella o rostro en este dispositivo (opcional)."
+    />
+  ) : (
+    <Notice tone="info">
+      Este dispositivo no puede usar biometría compatible con el almacenamiento
+      seguro. Desbloquearás siempre con tu passphrase.
+    </Notice>
+  );
 
   return (
     <Screen>
@@ -139,6 +202,9 @@ export default function OnboardingScreen() {
             label="Guardé la frase en un lugar seguro y entiendo que sin ella no puedo recuperar la billetera."
           />
 
+          {passphraseFields}
+          {biometricFields}
+
           <Button
             title="Crear billetera"
             onPress={submit}
@@ -162,24 +228,29 @@ export default function OnboardingScreen() {
               multiline
               numberOfLines={4}
             />
-            <Button
-              title="Importar billetera"
-              onPress={submit}
-              loading={busy}
-            />
           </Card>
 
+          {passphraseFields}
+          {biometricFields}
+
+          <Button
+            title="Importar billetera"
+            onPress={submit}
+            loading={busy}
+          />
+
           <Notice tone="info">
-            Al importar, CanoArk solo guarda la frase en el almacenamiento
-            seguro del dispositivo. La red se elige al compilar la app.
+            Al importar, CanoArk cifra la frase con tu passphrase en el
+            almacenamiento seguro del dispositivo. La red se elige al compilar
+            la app.
           </Notice>
         </>
       )}
 
       <Notice tone="info">
-        Si el dispositivo tiene biometría, Android Keystore pedirá huella o
-        rostro para leer la mnemónica al desbloquear. La frase nunca se guarda
-        en texto plano.
+        La passphrase es obligatoria y cifra la semilla con PBKDF2 y
+        XChaCha20-Poly1305. La biometría, cuando está disponible, solo guarda la
+        passphrase para no tener que escribirla.
       </Notice>
     </Screen>
   );

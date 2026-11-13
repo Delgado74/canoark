@@ -6,6 +6,7 @@ import {
   Button,
   Card,
   ErrorBanner,
+  Field,
   Notice,
   Paragraph,
   Screen,
@@ -16,16 +17,40 @@ import { useWallet } from '../hooks/useWallet';
 import { errorMessage } from '../lib/format';
 
 export default function UnlockScreen() {
-  const { status, busy, unlock, wipe, network, error } = useWallet();
+  const {
+    status,
+    busy,
+    unlock,
+    wipe,
+    network,
+    error,
+    biometricAvailable,
+    biometricEnabled,
+  } = useWallet();
   const [localError, setLocalError] = useState<string | null>(null);
+  const [passphrase, setPassphrase] = useState('');
 
   if (status === 'unlocked') return <Redirect href="/(tabs)" />;
   if (status === 'empty') return <Redirect href="/onboarding" />;
 
-  const onUnlock = async () => {
+  const onUnlockWithPassphrase = async () => {
+    setLocalError(null);
+    if (!passphrase) {
+      setLocalError('Escribe tu passphrase para desbloquear.');
+      return;
+    }
+    try {
+      await unlock({ passphrase });
+      router.replace('/(tabs)');
+    } catch (err) {
+      setLocalError(errorMessage(err));
+    }
+  };
+
+  const onUnlockWithBiometrics = async () => {
     setLocalError(null);
     try {
-      await unlock();
+      await unlock({ useBiometrics: true });
       router.replace('/(tabs)');
     } catch (err) {
       setLocalError(errorMessage(err));
@@ -55,6 +80,8 @@ export default function UnlockScreen() {
     );
   };
 
+  const canUseBiometricsButton = biometricAvailable && biometricEnabled;
+
   return (
     <Screen>
       <View style={styles.header}>
@@ -71,12 +98,35 @@ export default function UnlockScreen() {
       >
         <Text style={styles.lockIcon}>🔒</Text>
         <Paragraph muted>
-          La frase de recuperación está cifrada por Android Keystore. Si hay
-          biometría configurada, se pedirá huella o rostro.
+          Tu frase está cifrada con tu passphrase. Se descifra solo en este
+          dispositivo y nunca se guarda en texto plano.
         </Paragraph>
         {localError ? <ErrorBanner message={localError} /> : null}
         {!localError && error ? <ErrorBanner message={error} /> : null}
-        <Button title="Desbloquear" onPress={onUnlock} loading={busy} />
+
+        <Field
+          label="Passphrase"
+          value={passphrase}
+          onChangeText={setPassphrase}
+          placeholder="Tu passphrase de desbloqueo"
+          secureTextEntry
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="off"
+        />
+        <Button
+          title="Desbloquear"
+          onPress={onUnlockWithPassphrase}
+          loading={busy}
+        />
+        {canUseBiometricsButton ? (
+          <Button
+            title="Desbloquear con huella"
+            variant="secondary"
+            onPress={onUnlockWithBiometrics}
+            disabled={busy}
+          />
+        ) : null}
         <Button
           title="Eliminar billetera de este dispositivo"
           variant="danger"
@@ -85,11 +135,13 @@ export default function UnlockScreen() {
         />
       </Card>
 
-      <Notice tone="info">
-        Si cambiaron las huellas del dispositivo, Android Keystore puede
-        invalidar la clave. En ese caso hay que importar de nuevo la frase en
-        una instalación limpia.
-      </Notice>
+      {!biometricAvailable ? (
+        <Notice tone="info">
+          Este dispositivo no ofrece biometría compatible con el almacenamiento
+          seguro, así que el desbloqueo siempre usa la passphrase. Es el
+          comportamiento esperado en Android 10.
+        </Notice>
+      ) : null}
     </Screen>
   );
 }

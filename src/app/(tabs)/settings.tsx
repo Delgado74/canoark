@@ -29,6 +29,8 @@ export default function SettingsScreen() {
     wipe,
     busy,
     error,
+    biometricAvailable,
+    biometricEnabled,
   } = useWallet();
 
   const version = Constants.expoConfig?.version ?? '0.1.0';
@@ -146,9 +148,15 @@ export default function SettingsScreen() {
 
       <Card title="Seguridad">
         <Paragraph muted>
-          La frase de recuperación se guarda en expo-secure-store, respaldado
-          por Android Keystore. Si el dispositivo tiene biometría, se exige
-          huella o rostro para leerla.
+          Tu frase de recuperación está cifrada con tu passphrase (PBKDF2 +
+          XChaCha20-Poly1305) y el resultado se guarda en expo-secure-store,
+          respaldado por Android Keystore. La passphrase no se almacena nunca en
+          claro.
+        </Paragraph>
+        <Paragraph muted>
+          {biometricEnabled && biometricAvailable
+            ? 'El desbloqueo biométrico está activo: la passphrase se guarda aparte protegida por huella o rostro. Si falla, siempre puedes escribirla.'
+            : 'El desbloqueo usa tu passphrase. La biometría solo se ofrece cuando SecureStore puede usarla de forma segura (BIOMETRIC_STRONG).'}
         </Paragraph>
         <Notice tone="info">
           La billetera se bloquea sola tras 2 minutos en segundo plano. Los

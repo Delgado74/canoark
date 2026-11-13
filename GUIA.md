@@ -93,16 +93,27 @@ del polyfill.
 ## 4. Seguridad de la mnemónica
 
 - Se genera con `@scure/bip39` (12 palabras, 128 bits).
-- Se guarda con `expo-secure-store`, que en Android usa Android Keystore.
-- Opciones: `WHEN_UNLOCKED_THIS_DEVICE_ONLY` y `requireAuthentication` cuando
-  hay biometría disponible.
+- La passphrase es obligatoria (mínimo 8 caracteres) y nunca se guarda en claro.
+- La mnemónica se cifra con una clave derivada por PBKDF2-HMAC-SHA256
+  (210 000 iteraciones, salt de 16 bytes) y XChaCha20-Poly1305.
+- El blob cifrado `{ v, kdf, iter, salt, nonce, ciphertext }` se guarda en
+  `expo-secure-store` (`WHEN_UNLOCKED_THIS_DEVICE_ONLY`). Ni la semilla ni la
+  passphrase quedan legibles para quien lea el almacén.
+- La biometría es opcional y solo como comodidad: si
+  `SecureStore.canUseBiometricAuthentication()` devuelve `true` (BIOMETRIC_STRONG,
+  Class 3), la passphrase se guarda en una clave aparte con
+  `requireAuthentication: true`. Si el usuario no la activa, o el dispositivo no
+  la soporta, se desbloquea siempre con la passphrase.
+- En Android 10 `canUseBiometricAuthentication()` devuelve `false` y la opción
+  biométrica no se ofrece: así se evita el error
+  `Biometric authentication status is unknown`.
 - Un marcador separado (`canoark.hasWallet.v1`) indica si existe billetera sin
   disparar el prompt biométrico al arrancar.
-- La mnemónica nunca se escribe en SQLite, AsyncStorage ni logs.
+- Las claves del esquema antiguo (`canoark.mnemonic.v1`) se migran al esquema
+  cifrado la primera vez que se desbloquea con passphrase.
 
-Si el usuario borra sus huellas, Android puede invalidar la clave del Keystore.
-La app muestra un mensaje accionable y ofrece borrar la billetera e importar la
-frase de nuevo.
+Si el usuario borra sus huellas, Android puede invalidar la clave biométrica.
+La app avisa y permite desbloquear con la passphrase sin perder la billetera.
 
 La app se bloquea automáticamente tras 2 minutos en segundo plano, medidos con
 `AppState`. Al bloquear se cierra la sesión del SDK y se borra la mnemónica de
@@ -402,8 +413,16 @@ inlinan al compilar.
 
 ### La biometría falla tras cambiar huellas
 
-Android Keystore invalidó la clave. Borra la billetera desde la pantalla de
-desbloqueo e importa la frase de recuperación en una instalación limpia.
+Android Keystore invalidó la clave de la passphrase biométrica. Escribe tu
+passphrase en la pantalla de desbloqueo: la billetera sigue siendo accesible.
+Puedes volver a activar la biometría recreando la bóveda desde Ajustes o
+importando la frase de nuevo en una instalación limpia.
+
+### La opción de biometría no aparece (Xiaomi / Android 10)
+
+Es lo esperado. `expo-secure-store` exige `BIOMETRIC_STRONG` (Class 3) y en
+Android 10 la comprobación devuelve `BIOMETRIC_STATUS_UNKNOWN`; la app usa la
+passphrase como único método. No es un fallo de configuración del dispositivo.
 
 ### Una recepción Lightning queda pendiente
 

@@ -26,12 +26,6 @@
       ],
       "expo-sqlite",
       [
-        "expo-local-authentication",
-        {
-          "faceIDPermission": "CanoArk usa biometría para desbloquear tu billetera."
-        }
-      ],
-      [
         "expo-splash-screen",
         {
           "backgroundColor": "#0B0E11",

@@ -15,12 +15,15 @@ import type { BalanceView } from '../types/wallet';
 import { closeArkadeSession, getArkadeSession, openArkadeSession } from '../lib/arkade/client';
 import {
   canUseBiometrics,
+  createWalletSecrets,
   deleteWalletSecrets,
+  hasBiometricUnlock,
   hasStoredWallet,
   isValidMnemonic,
-  loadWalletMnemonic,
+  loadWalletMnemonicWithBiometrics,
+  loadWalletMnemonicWithPassphrase,
   normalizeMnemonic,
-  saveWalletMnemonic,
+  type CreateWalletResult,
 } from '../lib/arkade/identity';
 import {
   forgetLnurlSecrets,
@@ -47,9 +50,20 @@ type WalletContextValue = {
   address: string | null;
   boardingAddress: string | null;
   network: NetworkConfig;
+  /** true si este dispositivo puede usar biometría con SecureStore (Class 3). */
+  biometricAvailable: boolean;
+  /** true si la wallet guardada tiene desbloqueo biométrico configurado. */
+  biometricEnabled: boolean;
   clearError: () => void;
-  createWallet: (mnemonic: string) => Promise<void>;
-  unlock: () => Promise<void>;
+  createWallet: (input: {
+    mnemonic: string;
+    passphrase: string;
+    useBiometrics?: boolean;
+  }) => Promise<CreateWalletResult>;
+  unlock: (options?: {
+    passphrase?: string;
+    useBiometrics?: boolean;
+  }) => Promise<void>;
   lock: () => Promise<void>;
   wipe: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -89,6 +103,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [balance, setBalance] = useState<BalanceView | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [boardingAddress, setBoardingAddress] = useState<string | null>(null);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [biometricAvailable] = useState(() => canUseBiometrics());
 
   const mnemonicRef = useRef<string | null>(null);
   const statusRef = useRef<WalletStatus>('loading');
@@ -101,8 +117,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const exists = await hasStoredWallet();
-      if (!cancelled) setStatus(exists ? 'locked' : 'empty');
+      const [exists, biometric] = await Promise.all([
+        hasStoredWallet(),
+        hasBiometricUnlock(),
+      ]);
+      if (cancelled) return;
+      setStatus(exists ? 'locked' : 'empty');
+      setBiometricEnabled(biometric);
     })();
     return () => {
       cancelled = true;
@@ -153,7 +174,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, [connect]);
 
   const createWallet = useCallback(
-    async (mnemonic: string) => {
+    async ({
+      mnemonic,
+      passphrase,
+      useBiometrics = false,
+    }: {
+      mnemonic: string;
+      passphrase: string;
+      useBiometrics?: boolean;
+    }) => {
       const phrase = normalizeMnemonic(mnemonic);
       if (!isValidMnemonic(phrase)) {
         throw new Error('La frase de recuperación no es válida.');
@@ -162,8 +191,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       setBusy(true);
       setError(null);
       try {
-        const requireAuth = await canUseBiometrics();
-        await saveWalletMnemonic(phrase, requireAuth);
+        const result = await createWalletSecrets({
+          mnemonic: phrase,
+          passphrase,
+          useBiometrics: useBiometrics && biometricAvailable,
+        });
+        setBiometricEnabled(result.biometricEnabled);
         mnemonicRef.current = phrase;
         setStatus('unlocked');
         statusRef.current = 'unlocked';
@@ -174,34 +207,43 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           // La wallet existe y está desbloqueada; el error es de red.
           setError(errorMessage(err));
         }
+        return result;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [biometricAvailable, connect]
+  );
+
+  const unlock = useCallback(
+    async ({
+      passphrase,
+      useBiometrics = false,
+    }: { passphrase?: string; useBiometrics?: boolean } = {}) => {
+      setBusy(true);
+      setError(null);
+      try {
+        const mnemonic = useBiometrics
+          ? await loadWalletMnemonicWithBiometrics()
+          : await loadWalletMnemonicWithPassphrase(passphrase ?? '');
+        mnemonicRef.current = mnemonic;
+        setStatus('unlocked');
+        statusRef.current = 'unlocked';
+
+        try {
+          await connect();
+        } catch (err) {
+          setError(errorMessage(err));
+        }
+      } catch (err) {
+        setError(errorMessage(err));
+        throw err;
       } finally {
         setBusy(false);
       }
     },
     [connect]
   );
-
-  const unlock = useCallback(async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const mnemonic = await loadWalletMnemonic();
-      mnemonicRef.current = mnemonic;
-      setStatus('unlocked');
-      statusRef.current = 'unlocked';
-
-      try {
-        await connect();
-      } catch (err) {
-        setError(errorMessage(err));
-      }
-    } catch (err) {
-      setError(errorMessage(err));
-      throw err;
-    } finally {
-      setBusy(false);
-    }
-  }, [connect]);
 
   const lock = useCallback(async () => {
     mnemonicRef.current = null;
@@ -222,6 +264,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       resetState();
       setStatus('empty');
       statusRef.current = 'empty';
+      setBiometricEnabled(false);
     } finally {
       setBusy(false);
     }
@@ -307,6 +350,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     address,
     boardingAddress,
     network: ACTIVE_NETWORK,
+    biometricAvailable,
+    biometricEnabled,
     clearError: () => setError(null),
     createWallet,
     unlock,
