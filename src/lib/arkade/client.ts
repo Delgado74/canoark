@@ -2,6 +2,7 @@ import {
   EsploraProvider,
   RestDelegateProvider,
   Wallet,
+  type IVtxoManager,
 } from '@arkade-os/sdk';
 import {
   ExpoIndexerProvider,
@@ -16,6 +17,11 @@ export type ArkadeSession = {
   wallet: Wallet;
   swaps: SwapClient;
   storage: AppStorage;
+  /**
+   * Manager de liquidación. Su construcción arranca el poll que convierte los
+   * depósitos onchain (boarding) en saldo Arkade y renueva los VTXOs.
+   */
+  vtxoManager: IVtxoManager;
 };
 
 let session: ArkadeSession | null = null;
@@ -69,7 +75,12 @@ export async function openArkadeSession(
     });
     await swaps.ready;
 
-    session = { wallet, swaps, storage };
+    // Igual que Arkade Wallet: obtener el VtxoManager es lo que arranca el
+    // ciclo de liquidación. Sin esta llamada `settlementConfig` solo queda
+    // guardado y los depósitos onchain nunca se barajan a saldo Arkade.
+    const vtxoManager = await wallet.getVtxoManager();
+
+    session = { wallet, swaps, storage, vtxoManager };
     return session;
   } catch (err) {
     await wallet?.dispose().catch(() => undefined);

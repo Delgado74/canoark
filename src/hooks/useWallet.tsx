@@ -10,10 +10,15 @@ import {
 import { AppState, type AppStateStatus } from 'react-native';
 import type { PayResult } from '@arkade-os/swap';
 import {
+  ArkAddress,
   ArkNote,
+  Estimator,
+  VtxoScript,
+  hasBoardingTxExpired,
   type ArkTransaction,
   type ExtendedCoin,
   type NormalizedExtendedVirtualCoin,
+  type RelativeTimelock,
   type WalletBalance,
 } from '@arkade-os/sdk';
 import { ACTIVE_NETWORK, type NetworkConfig } from '../constants/network';
@@ -115,6 +120,59 @@ const WalletContext = createContext<WalletContextValue | null>(null);
 
 /** Tras este tiempo en segundo plano la wallet se bloquea. */
 const RELOCK_AFTER_MS = 2 * 60 * 1000;
+
+/** Hex de un script, sin depender de utilidades externas al SDK. */
+const toHex = (bytes: Uint8Array): string =>
+  Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+
+/**
+ * El timelock de salida más corto del boarding UTXO, que es el que decide si
+ * ya venció y por tanto si se puede liquidar o hay que barrerlo. Réplica de
+ * `isExpiredUtxo` de Arkade Wallet.
+ */
+function earliestBoardingTimelock(
+  utxo: ExtendedCoin
+): RelativeTimelock | undefined {
+  let earliest: RelativeTimelock | undefined;
+  for (const path of VtxoScript.decode(utxo.tapTree).exitPaths()) {
+    earliest = !earliest || path.params.timelock.value < earliest.value
+      ? path.params.timelock
+      : earliest;
+  }
+  return earliest;
+}
+
+function isBoardingUtxoExpired(utxo: ExtendedCoin): boolean {
+  const timelock = earliestBoardingTimelock(utxo);
+  return timelock ? hasBoardingTxExpired(utxo, timelock) : false;
+}
+
+const OUTPUT_FEE_ROUNDS = 8;
+
+/**
+ * Importe de salida que cumple `out + fee(out) = amount`. El operador cobra
+ * sobre el importe que recibe, así que restar la comisión del total una sola
+ * vez se queda corto. Misma lógica que `outputAfterItsFee` de Arkade Wallet.
+ */
+function outputAfterItsFee(
+  estimator: Estimator,
+  address: string,
+  amount: number
+): number {
+  const script = toHex(ArkAddress.decode(address).pkScript);
+  let out = amount;
+  for (let round = 0; round < OUTPUT_FEE_ROUNDS; round++) {
+    const next =
+      amount -
+      estimator.evalOffchainOutput({
+        amount: BigInt(Math.max(out, 0)),
+        script,
+      }).satoshis;
+    if (next === out) return Math.max(out, 0);
+    out = next;
+  }
+  throw new Error(`La comisión de salida no cuadra para ${amount} sats.`);
+}
 
 const toBalanceView = (raw: WalletBalance): BalanceView => ({
   available: raw.available,
@@ -502,23 +560,49 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const settleBoarding = useCallback(async () => {
     const session = await ensureSession();
-    const utxos = (await session.wallet.getBoardingUtxos()).filter(
-      utxo => utxo.status.confirmed
-    );
-    if (utxos.length === 0) {
-      throw new Error('No hay depósitos onchain confirmados para liquidar.');
+    const [utxos, info] = await Promise.all([
+      session.wallet.getBoardingUtxos(),
+      session.wallet.getOperatorInfo(),
+    ]);
+
+    // Mismo criterio que Arkade Wallet: solo UTXOs confirmados, no expirados
+    // y cuyo fee de entrada no se coma el importe.
+    const estimator = new Estimator(info.fees.intentFee ?? {});
+    const priced = utxos
+      .filter(utxo => utxo.status.confirmed && !isBoardingUtxoExpired(utxo))
+      .map(input => {
+        const fee = estimator.evalOnchainInput({
+          amount: BigInt(input.value),
+        }).satoshis;
+        return { input, fee };
+      })
+      .filter(({ input, fee }) => fee < input.value);
+
+    if (priced.length === 0) {
+      throw new Error(
+        'No hay depósitos onchain confirmados y liquidables (o están por debajo de la comisión).'
+      );
     }
-    const total = utxos.reduce(
-      (sum, utxo) => sum + BigInt(utxo.value),
-      0n
-    );
+
     const address = await session.wallet.getAddress();
+    const net = priced.reduce(
+      (sum, { input, fee }) => sum + input.value - fee,
+      0
+    );
+    const amount = outputAfterItsFee(estimator, address, net);
+    const dust = Number(info.dust);
+    if (amount < dust) {
+      throw new Error(
+        `El importe liquidable (${amount} sats) está por debajo del mínimo (${dust} sats).`
+      );
+    }
+
     await session.wallet.settle({
-      inputs: utxos,
-      outputs: [{ address, amount: total }],
+      inputs: priced.map(({ input }) => input),
+      outputs: [{ address, amount: BigInt(amount) }],
     });
     await refresh();
-    return Number(total);
+    return amount;
   }, [ensureSession, refresh]);
 
   const changePassphrase = useCallback(

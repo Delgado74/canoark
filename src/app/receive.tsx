@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  Linking,
   Share,
   StyleSheet,
   Text,
@@ -16,6 +17,7 @@ import {
   ErrorBanner,
   Field,
   Notice,
+  Row,
   Screen,
   Segmented,
   Title,
@@ -304,6 +306,30 @@ export default function ReceiveScreen() {
         <Button title="Añadir fondos" onPress={addFunds} />
       </Card>
 
+      {tab === 'onchain' && boardingAddress ? (
+        <Card>
+          <Text style={styles.diagTitle}>Diagnóstico del depósito</Text>
+          <Row label="Red activa" value={network.label} />
+          <Row label="Dirección" value={boardingAddress} mono />
+          <Row label="Esplora" value={network.esploraUrl} mono />
+          <Button
+            title="Ver en el explorador"
+            variant="secondary"
+            onPress={() => {
+              void Linking.openURL(
+                `${network.onchainExplorerUrl}/address/${boardingAddress}`
+              );
+            }}
+          />
+          <Notice tone="warning">
+            Esta dirección solo recibe bitcoin de {network.label}. Un envío
+            desde otra red (signet, testnet o mainnet) no aparecerá aquí ni se
+            podrá recuperar. Comprueba la transacción en el explorador antes de
+            darla por perdida.
+          </Notice>
+        </Card>
+      ) : null}
+
       {tab === 'arkade' && address ? (
         <Text style={styles.hint}>
           Tu dirección Arkade: {shorten(address, 14, 10)}
@@ -375,5 +401,10 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 12,
     textAlign: 'center',
+  },
+  diagTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

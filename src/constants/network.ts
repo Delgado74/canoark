@@ -11,7 +11,14 @@ export type NetworkConfig = {
   indexerUrl: string;
   /** Esplora usado para detectar depósitos onchain (boarding). */
   esploraUrl: string;
+  /** Explorador Arkade (vmempool) para transacciones offchain. */
   explorerUrl: string;
+  /**
+   * Explorador del chain base (mempool), el que hay que mirar para verificar un
+   * depósito al boarding. Es distinto del Arkade: un UTXO onchain no aparece en
+   * el vmempool hasta que se liquida.
+   */
+  onchainExplorerUrl: string;
   addressPrefix: 'ark1' | 'tark1';
   /** Servicio de delegación de renovaciones, igual que Arkade Wallet. */
   delegateUrl: string | null;
@@ -37,6 +44,7 @@ export const NETWORKS: Record<ArkadeNetworkName, NetworkConfig> = {
     indexerUrl: 'https://arkade.computer',
     esploraUrl: 'https://mempool.arkade.sh/api',
     explorerUrl: 'https://arkade.space',
+    onchainExplorerUrl: 'https://mempool.space',
     addressPrefix: 'ark1',
     delegateUrl: 'https://delegate.arkade.money',
     solverRegistryUrl: `${SOLVER_REGISTRY_BASE}/bitcoin.json`,
@@ -53,6 +61,7 @@ export const NETWORKS: Record<ArkadeNetworkName, NetworkConfig> = {
     indexerUrl: 'https://mutinynet.arkade.sh',
     esploraUrl: 'https://mempool.mutinynet.arkade.sh/api',
     explorerUrl: 'https://explorer.mutinynet.arkade.sh',
+    onchainExplorerUrl: 'https://mutinynet.com',
     addressPrefix: 'tark1',
     delegateUrl: 'https://delegator.mutinynet.arkade.sh',
     solverRegistryUrl: `${SOLVER_REGISTRY_BASE}/mutinynet.json`,
