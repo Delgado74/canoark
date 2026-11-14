@@ -340,8 +340,51 @@ export async function loadWalletMnemonicWithBiometrics(): Promise<string> {
   return loadWalletMnemonicWithPassphrase(passphrase);
 }
 
-export async function deleteWalletSecrets(): Promise<void> {
-  await Promise.all(
+export interface ChangePassphraseResult {
+  biometricEnabled: boolean;
+}
+
+/**
+ * Re-cifra la MISMA semilla con una passphrase nueva. No cambia el esquema de
+ * custodia: sigue siendo PBKDF2 + XChaCha20-Poly1305 en SecureStore.
+ */
+export async function changeWalletPassphrase(
+  currentPassphrase: string,
+  nextPassphrase: string,
+  useBiometrics: boolean
+): Promise<ChangePassphraseResult> {
+  const phrase = await loadWalletMnemonicWithPassphrase(currentPassphrase);
+  validatePassphrase(nextPassphrase);
+  await writeVault(phrase, nextPassphrase);
+
+  let biometricEnabled = false;
+  if (useBiometrics && canUseBiometrics()) {
+    try {
+      await SecureStore.setItemAsync(
+        BIOMETRIC_KEY,
+        nextPassphrase,
+        biometricOptions
+      );
+      await SecureStore.setItemAsync(BIOMETRIC_FLAG_KEY, '1', secureOptions);
+      biometricEnabled = true;
+    } catch {
+      await SecureStore.deleteItemAsync(BIOMETRIC_KEY).catch(() => undefined);
+      await SecureStore.deleteItemAsync(BIOMETRIC_FLAG_KEY).catch(
+        () => undefined
+      );
+    }
+  } else {
+    await SecureStore.deleteItemAsync(BIOMETRIC_KEY).catch(() => undefined);
+    await SecureStore.deleteItemAsync(BIOMETRIC_FLAG_KEY).catch(
+      () => undefined
+    );
+  }
+
+  await SecureStore.setItemAsync(MARKER_KEY, '1', secureOptions);
+  return { biometricEnabled };
+}
+
+export async function deleteWalletSecrets(): Promise<void> {  await Promise.all(
     [
       VAULT_KEY,
       BIOMETRIC_KEY,

@@ -11,7 +11,7 @@ import {
   Title,
 } from '../components/ui';
 import { colors, spacing } from '../constants/theme';
-import { formatSats } from '../lib/format';
+import { usePreferences } from '../hooks/usePreferences';
 import {
   formatFullDate,
   tagLabel,
@@ -26,6 +26,7 @@ const asString = (value: ParamValue): string => {
 };
 
 export default function TransactionDetailScreen() {
+  const { bitcoinParts } = usePreferences();
   const params = useLocalSearchParams<{
     type?: string;
     amount?: string;
@@ -66,8 +67,13 @@ export default function TransactionDetailScreen() {
           <Text style={styles.kind}>{incoming ? 'Recibido' : 'Enviado'}</Text>
           <Text style={[styles.amount, { color: incoming ? colors.success : colors.text }]}>
             {incoming ? '+' : '−'}
-            {formatSats(Math.abs(amount))}
-            <Text style={styles.unit}> sats</Text>
+            {bitcoinParts(Math.abs(amount)).value}
+            {bitcoinParts(Math.abs(amount)).unit ? (
+              <Text style={styles.unit}>
+                {' '}
+                {bitcoinParts(Math.abs(amount)).unit}
+              </Text>
+            ) : null}
           </Text>
         </View>
 

@@ -1,4 +1,8 @@
-import { Wallet } from '@arkade-os/sdk';
+import {
+  EsploraProvider,
+  RestDelegateProvider,
+  Wallet,
+} from '@arkade-os/sdk';
 import {
   ExpoIndexerProvider,
   ExpoOperatorProvider,
@@ -34,16 +38,34 @@ export async function openArkadeSession(
       // En Expo no hay EventSource: estos providers usan expo/fetch para SSE.
       operatorProvider: new ExpoOperatorProvider(ACTIVE_NETWORK.operatorUrl),
       indexerProvider: new ExpoIndexerProvider(ACTIVE_NETWORK.indexerUrl),
+      // Sin un onchain provider explícito, los depósitos al boarding dependen
+      // del Esplora por defecto del SDK. Lo fijamos al de la red activa para
+      // que getBoardingUtxos() consulte siempre el explorador correcto.
+      onchainProvider: new EsploraProvider(ACTIVE_NETWORK.esploraUrl),
       storage: storage.walletStorage,
-      // Renueva virtual outputs que expiran dentro de 3 días.
+      // Igual que Arkade Wallet: dirección de recepción estática y delegación
+      // de renovaciones al servicio configurado para la red.
+      walletMode: 'static',
+      ...(ACTIVE_NETWORK.delegateUrl
+        ? { delegateProvider: new RestDelegateProvider(ACTIVE_NETWORK.delegateUrl) }
+        : {}),
+      // Renueva virtual outputs que expiran dentro de 3 días y barre los
+      // depósitos onchain confirmados para convertirlos en saldo Arkade.
       settlementConfig: {
         vtxoThreshold: ACTIVE_NETWORK.vtxoThresholdSeconds,
+        boardingUtxoSweep: true,
+        pollIntervalMs: 60_000,
       },
     });
 
     const swaps = createSwapClient({
       wallet,
       repository: storage.swapRepository,
+      // Mismo registro de solvers que usa Arkade Wallet.
+      discovery: {
+        network: ACTIVE_NETWORK.swapNetwork,
+        registryUrl: ACTIVE_NETWORK.solverRegistryUrl,
+      },
     });
     await swaps.ready;
 

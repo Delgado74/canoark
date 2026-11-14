@@ -17,6 +17,7 @@ import {
 } from '../../components/ui';
 import { colors, spacing } from '../../constants/theme';
 import { useWallet } from '../../hooks/useWallet';
+import { usePreferences } from '../../hooks/usePreferences';
 import { errorMessage } from '../../lib/format';
 
 const REPO_URL = 'https://github.com/Delgado74/canoark';
@@ -67,6 +68,7 @@ export default function SettingsScreen() {
     biometricEnabled,
     revealMnemonic,
   } = useWallet();
+  const { preferences } = usePreferences();
 
   const version = Constants.expoConfig?.version ?? '0.1.0';
 
@@ -124,6 +126,9 @@ export default function SettingsScreen() {
     );
   };
 
+  const unitValue =
+    preferences.unit === 'BIP177' ? '₿ (BIP177)' : preferences.unit;
+
   return (
     <Screen refreshing={refreshing} onRefresh={refresh}>
       <View style={styles.header}>
@@ -135,33 +140,18 @@ export default function SettingsScreen() {
 
       <SectionLabel>General</SectionLabel>
       <View style={styles.group}>
-        <SettingsItem
+        <MenuRow
           icon="💶"
           label="Moneda"
-          value="Sats / BTC"
-          open={open === 'currency'}
-          onToggle={() => toggle('currency')}
-        >
-          <Paragraph muted>
-            CanoArk muestra sats y su equivalente en BTC. El selector de moneda
-            fiat llegará en una próxima versión.
-          </Paragraph>
-        </SettingsItem>
-
-        <SettingsItem
+          value={preferences.currency}
+          onPress={() => router.push('/settings/currency')}
+        />
+        <MenuRow
           icon="🖥"
           label="Pantalla"
-          value="Oscuro"
-          open={open === 'display'}
-          onToggle={() => toggle('display')}
-        >
-          <Row label="Tema" value="Oscuro" />
-          <Row label="Unidad de bitcoin" value="Sats" />
-          <Row label="Vibración" value="Sistema" />
-          <Paragraph muted>
-            Tema oscuro fijo, optimizado para pantallas móviles y bajo consumo.
-          </Paragraph>
-        </SettingsItem>
+          value={unitValue}
+          onPress={() => router.push('/settings/display')}
+        />
 
         <SettingsItem
           icon="🔔"
@@ -186,18 +176,12 @@ export default function SettingsScreen() {
           <Paragraph muted>Idioma de la interfaz: español.</Paragraph>
         </SettingsItem>
 
-        <SettingsItem
+        <MenuRow
           icon="📝"
           label="Notas"
-          value="No disponible"
-          open={open === 'notes'}
-          onToggle={() => toggle('notes')}
-        >
-          <Notice tone="info">
-            Arkade Wallet permite canjear notas (notes). CanoArk todavía no
-            implementa esta función; se añadirá en una próxima versión.
-          </Notice>
-        </SettingsItem>
+          value="Canjear ArkNote"
+          onPress={() => router.push('/settings/notes')}
+        />
 
         <SettingsItem
           icon="ℹ"
@@ -211,6 +195,8 @@ export default function SettingsScreen() {
           <Row label="Dinero real" value={network.isMainnet ? 'Sí' : 'No'} />
           <Row label="Operador" value={network.operatorUrl} mono />
           <Row label="Indexer" value={network.indexerUrl} mono />
+          <Row label="Delegador" value={network.delegateUrl ?? '—'} mono />
+          <Row label="LNURL" value={network.lnurlServer} mono />
           <Button
             title="Abrir explorador"
             variant="secondary"
@@ -241,7 +227,7 @@ export default function SettingsScreen() {
         <MenuRow
           icon="🧩"
           label="Avanzado"
-          value="Servidor, VTXOs, LNURL"
+          value="Mint, monedas, solvers, LNURL"
           onPress={() => router.push('/advanced')}
         />
       </View>

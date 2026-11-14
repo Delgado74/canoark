@@ -9,12 +9,19 @@ import {
 } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import type { PayResult } from '@arkade-os/swap';
-import type { ArkTransaction, WalletBalance } from '@arkade-os/sdk';
+import {
+  ArkNote,
+  type ArkTransaction,
+  type ExtendedCoin,
+  type NormalizedExtendedVirtualCoin,
+  type WalletBalance,
+} from '@arkade-os/sdk';
 import { ACTIVE_NETWORK, type NetworkConfig } from '../constants/network';
-import type { BalanceView } from '../types/wallet';
+import type { BalanceView, CoinView } from '../types/wallet';
 import { closeArkadeSession, getArkadeSession, openArkadeSession } from '../lib/arkade/client';
 import {
   canUseBiometrics,
+  changeWalletPassphrase,
   createWalletSecrets,
   deleteWalletSecrets,
   hasBiometricUnlock,
@@ -23,6 +30,7 @@ import {
   loadWalletMnemonicWithBiometrics,
   loadWalletMnemonicWithPassphrase,
   normalizeMnemonic,
+  type ChangePassphraseResult,
   type CreateWalletResult,
 } from '../lib/arkade/identity';
 import {
@@ -50,6 +58,9 @@ type WalletContextValue = {
   address: string | null;
   boardingAddress: string | null;
   history: ArkTransaction[];
+  /** Virtual outputs y UTXOs de boarding, con vencimiento y estado. */
+  coins: CoinView[];
+  coinsLoaded: boolean;
   network: NetworkConfig;
   /** true si este dispositivo puede usar biometría con SecureStore (Class 3). */
   biometricAvailable: boolean;
@@ -83,6 +94,21 @@ type WalletContextValue = {
   ) => () => void;
   /** Solo disponible con la billetera desbloqueada. */
   revealMnemonic: () => string | null;
+  /** Recarga los coins (VTXOs + UTXOs de boarding) bajo demanda. */
+  loadCoins: () => Promise<CoinView[]>;
+  /** Canjea una o varias notas Ark separadas por espacios. */
+  redeemNotes: (note: string) => Promise<void>;
+  /**
+   * Convierte los depósitos onchain confirmados en saldo Arkade sin esperar
+   * al ciclo automático del SDK. Devuelve los sats liquidados.
+   */
+  settleBoarding: () => Promise<number>;
+  /** Cambia la passphrase que cifra la semilla en este dispositivo. */
+  changePassphrase: (
+    currentPassphrase: string,
+    nextPassphrase: string,
+    useBiometrics: boolean
+  ) => Promise<ChangePassphraseResult>;
 };
 
 const WalletContext = createContext<WalletContextValue | null>(null);
@@ -100,6 +126,51 @@ const toBalanceView = (raw: WalletBalance): BalanceView => ({
   boardingUnconfirmed: raw.boarding.unconfirmed,
 });
 
+const vtxoStatus = (vtxo: NormalizedExtendedVirtualCoin): CoinView['status'] => {
+  if (vtxo.isSpent) return 'spent';
+  if (vtxo.isSwept) return 'swept';
+  if (vtxo.isPreconfirmed) return 'preconfirmed';
+  return 'settled';
+};
+
+function toCoinViews(
+  vtxos: NormalizedExtendedVirtualCoin[],
+  boarding: ExtendedCoin[],
+  boardingExitDelay: number
+): CoinView[] {
+  const virtual = vtxos.map<CoinView>(vtxo => ({
+    id: `vtxo:${vtxo.txid}:${vtxo.vout}`,
+    kind: 'vtxo',
+    value: vtxo.value,
+    txid: vtxo.txid,
+    vout: vtxo.vout,
+    expiresAt: vtxo.expiresAt ? vtxo.expiresAt.getTime() : null,
+    createdAt: vtxo.createdAt ? vtxo.createdAt.getTime() : null,
+    status: vtxoStatus(vtxo),
+    isSpent: Boolean(vtxo.isSpent),
+    isSwept: Boolean(vtxo.isSwept),
+  }));
+
+  const onchain = boarding.map<CoinView>(utxo => ({
+    id: `boarding:${utxo.txid}:${utxo.vout}`,
+    kind: 'boarding',
+    value: utxo.value,
+    txid: utxo.txid,
+    vout: utxo.vout,
+    expiresAt: utxo.status.block_time
+      ? (utxo.status.block_time + boardingExitDelay) * 1000
+      : null,
+    createdAt: utxo.status.block_time
+      ? utxo.status.block_time * 1000
+      : null,
+    status: utxo.status.confirmed ? 'settled' : 'unconfirmed',
+    isSpent: false,
+    isSwept: false,
+  }));
+
+  return [...virtual, ...onchain].sort((a, b) => b.value - a.value);
+}
+
 /** Cada cuánto se refresca el saldo mientras la app está en primer plano. */
 const BALANCE_POLL_MS = 30 * 1000;
 
@@ -115,6 +186,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [address, setAddress] = useState<string | null>(null);
   const [boardingAddress, setBoardingAddress] = useState<string | null>(null);
   const [history, setHistory] = useState<ArkTransaction[]>([]);
+  const [coins, setCoins] = useState<CoinView[]>([]);
+  const [coinsLoaded, setCoinsLoaded] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [biometricAvailable] = useState(() => canUseBiometrics());
@@ -153,6 +226,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setAddress(null);
     setBoardingAddress(null);
     setHistory([]);
+    setCoins([]);
+    setCoinsLoaded(false);
     setSessionReady(false);
     setError(null);
   }, []);
@@ -168,6 +243,20 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       return openArkadeSession(mnemonic);
     }
   }, []);
+
+  const loadCoins = useCallback(async () => {
+    const session = await ensureSession();
+    const [vtxos, boarding, info] = await Promise.all([
+      session.wallet.getVtxos({ withRecoverable: true }),
+      session.wallet.getBoardingUtxos(),
+      session.wallet.getOperatorInfo().catch(() => null),
+    ]);
+    const exitDelay = info ? Number(info.boardingExitDelay) : 0;
+    const next = toCoinViews(vtxos, boarding, exitDelay);
+    setCoins(next);
+    setCoinsLoaded(true);
+    return next;
+  }, [ensureSession]);
 
   const connect = useCallback(async () => {
     const session = await ensureSession();
@@ -189,8 +278,14 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       // El historial es secundario: no debe tumbar la sincronización.
     }
 
+    try {
+      await loadCoins();
+    } catch {
+      // El listado de coins es secundario; el saldo ya está actualizado.
+    }
+
     setSessionReady(true);
-  }, [ensureSession]);
+  }, [ensureSession, loadCoins]);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -381,6 +476,68 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  const redeemNotes = useCallback(
+    async (note: string) => {
+      const session = await ensureSession();
+      const raw = note.trim();
+      if (!raw) throw new Error('Introduce una nota Ark.');
+      const inputs = raw
+        .split(/\s+/)
+        .filter(Boolean)
+        .map(value => ArkNote.fromString(value));
+      if (inputs.length === 0) throw new Error('La nota no es válida.');
+      const amount = inputs.reduce(
+        (total, input) => total + BigInt(input.value),
+        0n
+      );
+      const address = await session.wallet.getAddress();
+      await session.wallet.settle({
+        inputs,
+        outputs: [{ address, amount }],
+      });
+      await refresh();
+    },
+    [ensureSession, refresh]
+  );
+
+  const settleBoarding = useCallback(async () => {
+    const session = await ensureSession();
+    const utxos = (await session.wallet.getBoardingUtxos()).filter(
+      utxo => utxo.status.confirmed
+    );
+    if (utxos.length === 0) {
+      throw new Error('No hay depósitos onchain confirmados para liquidar.');
+    }
+    const total = utxos.reduce(
+      (sum, utxo) => sum + BigInt(utxo.value),
+      0n
+    );
+    const address = await session.wallet.getAddress();
+    await session.wallet.settle({
+      inputs: utxos,
+      outputs: [{ address, amount: total }],
+    });
+    await refresh();
+    return Number(total);
+  }, [ensureSession, refresh]);
+
+  const changePassphrase = useCallback(
+    async (
+      currentPassphrase: string,
+      nextPassphrase: string,
+      useBiometrics: boolean
+    ) => {
+      const result = await changeWalletPassphrase(
+        currentPassphrase,
+        nextPassphrase,
+        useBiometrics
+      );
+      setBiometricEnabled(result.biometricEnabled);
+      return result;
+    },
+    []
+  );
+
   const revealMnemonic = useCallback(() => mnemonicRef.current, []);
 
   /**
@@ -466,6 +623,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     address,
     boardingAddress,
     history,
+    coins,
+    coinsLoaded,
     network: ACTIVE_NETWORK,
     biometricAvailable,
     biometricEnabled,
@@ -479,6 +638,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     createInvoice,
     watchOutcome,
     revealMnemonic,
+    loadCoins,
+    redeemNotes,
+    settleBoarding,
+    changePassphrase,
   };
 
   return (

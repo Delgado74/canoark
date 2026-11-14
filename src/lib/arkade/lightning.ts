@@ -195,10 +195,16 @@ export type LnurlConfig = {
 };
 
 export function getLnurlConfig(): LnurlConfig | null {
-  const baseUrl = process.env.EXPO_PUBLIC_LNURL_BASE_URL?.trim();
+  // Mismos valores que Arkade Wallet: servidor y dominio se pueden sobrescribir
+  // por entorno, pero por defecto salen de la red activa.
+  const baseUrl =
+    process.env.EXPO_PUBLIC_LNURL_BASE_URL?.trim() ||
+    process.env.EXPO_PUBLIC_LNURL_SERVER?.trim() ||
+    ACTIVE_NETWORK.lnurlServer;
   if (!baseUrl) return null;
 
-  const configuredDomain = process.env.EXPO_PUBLIC_LNURL_DOMAIN?.trim();
+  const configuredDomain =
+    process.env.EXPO_PUBLIC_LNURL_DOMAIN?.trim() || ACTIVE_NETWORK.lnurlDomain;
   let domain = configuredDomain;
   if (!domain) {
     try {

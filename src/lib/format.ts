@@ -1,3 +1,5 @@
+import type { BitcoinUnit } from './preferences';
+
 const groupThousands = (value: number): string =>
   String(Math.trunc(Math.abs(value))).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 
@@ -41,4 +43,31 @@ export function satsFromInput(value: string): number {
   const parsed = Number(normalized);
   if (!Number.isFinite(parsed) || parsed <= 0) return 0;
   return Math.floor(parsed);
+}
+
+/**
+ * Separa el importe de su unidad para poder pintarlos con estilos distintos,
+ * igual que la pantalla principal de Arkade Wallet.
+ */
+export function formatBitcoinParts(
+  sats: number | null | undefined,
+  unit: BitcoinUnit
+): { value: string; unit: string } {
+  const amount = sats ?? 0;
+  if (unit === 'BIP177') {
+    return { value: `₿${groupThousands(amount)}`, unit: '' };
+  }
+  if (unit === 'sats') {
+    return { value: formatSats(amount), unit: 'sats' };
+  }
+  return { value: formatBtc(amount), unit: 'BTC' };
+}
+
+/** Importe en la unidad de bitcoin elegida, con su etiqueta. */
+export function formatBitcoinAmount(
+  sats: number | null | undefined,
+  unit: BitcoinUnit
+): string {
+  const parts = formatBitcoinParts(sats, unit);
+  return parts.unit ? `${parts.value} ${parts.unit}` : parts.value;
 }

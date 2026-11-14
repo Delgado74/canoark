@@ -14,6 +14,7 @@ import {
 } from '../components/ui';
 import { colors, spacing } from '../constants/theme';
 import { useWallet } from '../hooks/useWallet';
+import { usePreferences } from '../hooks/usePreferences';
 import {
   isArkadeAddress,
   isLightningInvoice,
@@ -77,6 +78,7 @@ const isTerminal = (outcome: string) =>
 
 export default function SendScreen() {
   const { sendPayment, watchOutcome, balance } = useWallet();
+  const { formatBitcoin } = usePreferences();
   const [destination, setDestination] = useState('');
   const [amount, setAmount] = useState('');
   const [maxFee, setMaxFee] = useState('500');
@@ -118,7 +120,7 @@ export default function SendScreen() {
     const amountText =
       kind === 'lightning'
         ? 'el importe de la factura'
-        : `${formatSats(sats)} sats`;
+        : formatBitcoin(sats);
 
     Alert.alert(
       'Confirmar envío',
@@ -191,7 +193,7 @@ export default function SendScreen() {
         <Title>Enviar</Title>
         <Badge
           label={
-            balance ? `${formatSats(balance.available)} sats` : 'sin datos'
+            balance ? formatBitcoin(balance.available) : 'sin datos'
           }
           tone="neutral"
         />

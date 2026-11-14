@@ -9,7 +9,8 @@ import {
 } from '../../components/ui';
 import { colors, spacing } from '../../constants/theme';
 import { useWallet } from '../../hooks/useWallet';
-import { formatBtc, formatSats } from '../../lib/format';
+import { usePreferences } from '../../hooks/usePreferences';
+import { formatSats } from '../../lib/format';
 import {
   TransactionRow,
   transactionKey,
@@ -24,6 +25,7 @@ export default function WalletScreen() {
     refreshing,
     error,
   } = useWallet();
+  const { bitcoinParts, formatFiatValue, preferences } = usePreferences();
 
   return (
     <Screen refreshing={refreshing} onRefresh={refresh}>
@@ -45,15 +47,24 @@ export default function WalletScreen() {
                 adjustsFontSizeToFit
                 minimumFontScale={0.6}
               >
-                {formatSats(balance.available)}
+                {bitcoinParts(balance.available).value}
               </Text>
-              <Text style={styles.balanceUnit}>sats</Text>
+              {bitcoinParts(balance.available).unit ? (
+                <Text style={styles.balanceUnit}>
+                  {bitcoinParts(balance.available).unit}
+                </Text>
+              ) : null}
             </View>
-            <Text style={styles.fiat}>≈ {formatBtc(balance.available)} BTC</Text>
+            {preferences.currency !== 'BTC' ? (
+              <Text style={styles.fiat}>
+                ≈ {formatFiatValue(balance.available)}
+              </Text>
+            ) : null}
             {balance.boarding > 0 ? (
               <View style={styles.boarding}>
                 <Text style={styles.boardingTitle}>
-                  ⏳ Boarding pendiente: {formatSats(balance.boarding)} sats
+                  ⏳ Boarding pendiente: {bitcoinParts(balance.boarding).value}{' '}
+                  {bitcoinParts(balance.boarding).unit}
                 </Text>
                 <Text style={styles.boardingText}>
                   {balance.boardingUnconfirmed > 0

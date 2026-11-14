@@ -2,7 +2,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import type { ArkTransaction } from '@arkade-os/sdk';
 import { colors, spacing } from '../constants/theme';
-import { formatSats, shorten } from '../lib/format';
+import { usePreferences } from '../hooks/usePreferences';
+import { shorten } from '../lib/format';
 
 export function transactionKey(tx: ArkTransaction): string {
   return (
@@ -81,6 +82,7 @@ export function formatFullDate(timestamp: number): string {
 }
 
 export function TransactionRow({ tx }: { tx: ArkTransaction }) {
+  const { formatBitcoin, bitcoinParts } = usePreferences();
   const incoming = tx.type === 'RECEIVED';
   const sign = incoming ? '+' : '−';
   const color = incoming ? colors.success : colors.text;
@@ -106,9 +108,9 @@ export function TransactionRow({ tx }: { tx: ArkTransaction }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${incoming ? 'Recibido' : 'Enviado'} ${formatSats(
+      accessibilityLabel={`${incoming ? 'Recibido' : 'Enviado'} ${formatBitcoin(
         Math.abs(tx.amount)
-      )} sats, ${status.label}`}
+      )}, ${status.label}`}
       onPress={openDetail}
       style={({ pressed }) => [styles.row, pressed && styles.pressed]}
     >
@@ -138,9 +140,13 @@ export function TransactionRow({ tx }: { tx: ArkTransaction }) {
       <View style={styles.right}>
         <Text style={[styles.amount, { color }]} numberOfLines={1}>
           {sign}
-          {formatSats(Math.abs(tx.amount))}
+          {bitcoinParts(Math.abs(tx.amount)).value}
         </Text>
-        <Text style={styles.unit}>sats</Text>
+        {bitcoinParts(Math.abs(tx.amount)).unit ? (
+          <Text style={styles.unit}>
+            {bitcoinParts(Math.abs(tx.amount)).unit}
+          </Text>
+        ) : null}
       </View>
     </Pressable>
   );
