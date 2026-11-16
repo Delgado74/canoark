@@ -1,8 +1,13 @@
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { router } from 'expo-router';
 import {
   Badge,
-  Button,
   Card,
   ErrorBanner,
   Screen,
@@ -16,6 +21,30 @@ import {
   transactionKey,
 } from '../../components/TransactionRow';
 
+function QuickAction({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: string;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      style={({ pressed }) => [styles.action, pressed && styles.pressed]}
+    >
+      <View style={styles.actionIcon}>
+        <Text style={styles.actionIconText}>{icon}</Text>
+      </View>
+      <Text style={styles.actionLabel}>{label}</Text>
+    </Pressable>
+  );
+}
+
 export default function WalletScreen() {
   const {
     balance,
@@ -24,20 +53,34 @@ export default function WalletScreen() {
     refresh,
     refreshing,
     error,
+    walletMode,
   } = useWallet();
   const { bitcoinParts, formatFiatValue, preferences } = usePreferences();
 
   return (
     <Screen refreshing={refreshing} onRefresh={refresh}>
       <View style={styles.header}>
-        <Text style={styles.brand}>CanoArk</Text>
+        <View>
+          <Text style={styles.brand}>CanoArk</Text>
+          <Text style={styles.brandSub}>
+            {walletMode === 'hd' ? 'Direcciones rotativas' : 'Dirección estática'}
+          </Text>
+        </View>
         <Badge label={network.label} tone="primary" />
       </View>
 
       {error ? <ErrorBanner message={error} /> : null}
 
       <Card>
-        <Text style={styles.eyebrow}>Saldo disponible</Text>
+        <View style={styles.balanceHead}>
+          <Text style={styles.eyebrow}>Saldo disponible</Text>
+          {refreshing ? (
+            <View style={styles.syncing}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={styles.syncingText}>Sincronizando</Text>
+            </View>
+          ) : null}
+        </View>
         {balance ? (
           <>
             <View style={styles.balanceRow}>
@@ -60,6 +103,30 @@ export default function WalletScreen() {
                 ≈ {formatFiatValue(balance.available)}
               </Text>
             ) : null}
+
+            <View style={styles.breakdown}>
+              <View style={styles.breakdownItem}>
+                <Text style={styles.breakdownLabel}>Liquidado</Text>
+                <Text style={styles.breakdownValue}>
+                  {formatSats(balance.settled)} sats
+                </Text>
+              </View>
+              <View style={styles.breakdownItem}>
+                <Text style={styles.breakdownLabel}>Preconfirmado</Text>
+                <Text style={styles.breakdownValue}>
+                  {formatSats(balance.preconfirmed)} sats
+                </Text>
+              </View>
+              {balance.boarding > 0 ? (
+                <View style={styles.breakdownItem}>
+                  <Text style={styles.breakdownLabel}>Boarding</Text>
+                  <Text style={styles.breakdownValue}>
+                    {formatSats(balance.boarding)} sats
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
             {balance.boarding > 0 ? (
               <View style={styles.boarding}>
                 <Text style={styles.boardingTitle}>
@@ -69,9 +136,8 @@ export default function WalletScreen() {
                 <Text style={styles.boardingText}>
                   {balance.boardingUnconfirmed > 0
                     ? `${formatSats(balance.boardingUnconfirmed)} sats sin confirmar.`
-                    : `${formatSats(balance.boardingConfirmed)} sats confirmados, en cola de liquidación.`}
-                  {' '}Al confirmarse se convierten en saldo Arkade
-                  automáticamente.
+                    : `${formatSats(balance.boardingConfirmed)} sats confirmados, en cola de liquidación.`}{' '}
+                  Al confirmarse se convierten en saldo Arkade automáticamente.
                 </Text>
               </View>
             ) : null}
@@ -82,23 +148,27 @@ export default function WalletScreen() {
             <Text style={styles.muted}>Sincronizando…</Text>
           </View>
         )}
-
-        <View style={styles.actions}>
-          <View style={styles.action}>
-            <Button
-              title="Recibir"
-              onPress={() => router.push('/receive')}
-            />
-          </View>
-          <View style={styles.action}>
-            <Button
-              title="Enviar"
-              variant="secondary"
-              onPress={() => router.push('/send')}
-            />
-          </View>
-        </View>
       </Card>
+
+      <View style={styles.actions}>
+        <QuickAction
+          icon="↓"
+          label="Recibir"
+          onPress={() => router.push({ pathname: '/receive', params: { tab: 'arkade' } })}
+        />
+        <QuickAction
+          icon="⚡"
+          label="Lightning"
+          onPress={() =>
+            router.push({ pathname: '/receive', params: { tab: 'lightning' } })
+          }
+        />
+        <QuickAction
+          icon="↑"
+          label="Enviar"
+          onPress={() => router.push('/send')}
+        />
+      </View>
 
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Últimos movimientos</Text>
@@ -113,7 +183,8 @@ export default function WalletScreen() {
       {history.length === 0 ? (
         <Card>
           <Text style={styles.muted}>
-            Aún no hay movimientos. Recibe tus primeros sats para empezar.
+            Aún no hay movimientos. Recibe tus primeros sats para empezar. Puedes
+            depositar onchain desde Recibir → Onchain.
           </Text>
         </Card>
       ) : (
@@ -140,12 +211,34 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -0.4,
   },
+  brandSub: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+    paddingTop: 2,
+  },
+  balanceHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
   eyebrow: {
     color: colors.textMuted,
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 1,
     textTransform: 'uppercase',
+  },
+  syncing: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  syncingText: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
   },
   balanceRow: {
     flexDirection: 'row',
@@ -169,6 +262,31 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 14,
   },
+  breakdown: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingTop: spacing.xs,
+  },
+  breakdownItem: {
+    flex: 1,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: 10,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    gap: 1,
+  },
+  breakdownLabel: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  breakdownValue: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   boarding: {
     backgroundColor: 'rgba(244, 201, 93, 0.12)',
     borderRadius: 12,
@@ -190,16 +308,45 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     gap: spacing.sm,
-    paddingTop: spacing.sm,
   },
   action: {
     flex: 1,
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    paddingVertical: spacing.md,
+  },
+  actionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceAlt,
+  },
+  actionIconText: {
+    color: colors.primary,
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  actionLabel: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '700',
   },
   loading: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  muted: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 19,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -209,12 +356,12 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     color: colors.text,
-    fontSize: 17,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '800',
   },
   sectionLink: {
     color: colors.primary,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
   },
   list: {
@@ -224,9 +371,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     overflow: 'hidden',
   },
-  muted: {
-    color: colors.textMuted,
-    fontSize: 13,
-    lineHeight: 19,
+  pressed: {
+    opacity: 0.75,
   },
 });
