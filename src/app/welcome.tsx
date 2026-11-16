@@ -4,6 +4,20 @@ import { Badge, Button, Notice, Screen } from '../components/ui';
 import { colors, spacing } from '../constants/theme';
 import { useWallet } from '../hooks/useWallet';
 
+function Bullet({ icon, title, text }: { icon: string; title: string; text: string }) {
+  return (
+    <View style={styles.bullet}>
+      <View style={styles.bulletIcon}>
+        <Text style={styles.bulletIconText}>{icon}</Text>
+      </View>
+      <View style={styles.bulletBody}>
+        <Text style={styles.bulletTitle}>{title}</Text>
+        <Text style={styles.bulletText}>{text}</Text>
+      </View>
+    </View>
+  );
+}
+
 export default function WelcomeScreen() {
   const { status, network } = useWallet();
 
@@ -21,19 +35,37 @@ export default function WelcomeScreen() {
         />
         <Text style={styles.title}>CanoArk</Text>
         <Text style={styles.subtitle}>
-          Tu billetera Arkade en el móvil. Rápida, sin custodia y con tus llaves
+          Billetera Arkade sin custodia para Bitcoin y Lightning, con tus llaves
           siempre en este dispositivo.
         </Text>
         <Badge label={network.label} tone="primary" />
       </View>
 
+      <View style={styles.bullets}>
+        <Bullet
+          icon="⚡"
+          title="Pagos instantáneos"
+          text="Envía y recibe dentro de Arkade sin esperar confirmaciones de bloque."
+        />
+        <Bullet
+          icon="🔑"
+          title="Tus llaves, tu billetera"
+          text="La frase de recuperación se cifra en el dispositivo y nunca se envía a un servidor."
+        />
+        <Bullet
+          icon="🌐"
+          title="Lightning y onchain"
+          text="Paga facturas Lightning o direcciones onchain mediante los solvers de Arkade."
+        />
+      </View>
+
       <View style={styles.actions}>
         <Button
-          title="Nueva billetera"
+          title="Crear billetera"
           onPress={() => router.push('/create')}
         />
         <Button
-          title="Restaurar billetera"
+          title="Ya tengo una billetera"
           variant="secondary"
           onPress={() => router.push('/restore')}
         />
@@ -41,9 +73,14 @@ export default function WelcomeScreen() {
 
       <Notice tone="info">
         {network.isMainnet
-          ? 'Esta compilación usa Bitcoin mainnet: son fondos reales.'
-          : 'Esta compilación usa Mutinynet: bitcoin de prueba.'}
+          ? 'Esta compilación usa Bitcoin mainnet: son fondos reales. Verifica direcciones y comisiones.'
+          : 'Esta compilación usa Mutinynet: bitcoin de prueba. No envíes fondos reales a estas direcciones.'}
       </Notice>
+
+      <Text style={styles.footnote}>
+        Al continuar aceptas que CanoArk es software experimental y que eres el
+        único responsable de tu frase de recuperación.
+      </Text>
     </Screen>
   );
 }
@@ -52,8 +89,7 @@ const styles = StyleSheet.create({
   hero: {
     alignItems: 'center',
     gap: spacing.md,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.lg,
+    paddingTop: spacing.lg,
   },
   logo: {
     width: 104,
@@ -75,7 +111,51 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     maxWidth: 340,
   },
+  bullets: {
+    gap: spacing.sm,
+  },
+  bullet: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    padding: spacing.md,
+  },
+  bulletIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceAlt,
+  },
+  bulletIconText: {
+    fontSize: 19,
+  },
+  bulletBody: {
+    flex: 1,
+    gap: 2,
+  },
+  bulletTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  bulletText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
   actions: {
     gap: spacing.sm,
+  },
+  footnote: {
+    color: colors.textMuted,
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: 'center',
   },
 });

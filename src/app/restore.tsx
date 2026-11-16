@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
 import {
   Button,
   Card,
@@ -9,8 +10,13 @@ import {
   Notice,
   Paragraph,
   Screen,
-  Title,
 } from '../components/ui';
+import {
+  OnboardingSuccess,
+  SecuritySetup,
+  StepHeader,
+  passphraseStrength,
+} from '../components/Onboarding';
 import { colors, spacing } from '../constants/theme';
 import { useWallet } from '../hooks/useWallet';
 import {
@@ -18,29 +24,72 @@ import {
   MIN_PASSPHRASE_LENGTH,
   normalizeMnemonic,
 } from '../lib/arkade/identity';
+import type { WalletMode } from '../lib/arkade/walletMode';
 import { errorMessage } from '../lib/format';
 
+type Step = 1 | 2 | 3;
+
 export default function RestoreWalletScreen() {
-  const { status, busy, createWallet, biometricAvailable } = useWallet();
+  const { status, busy, createWallet, biometricAvailable, address } =
+    useWallet();
+
+  const [step, setStep] = useState<Step>(1);
   const [imported, setImported] = useState('');
+  const [touched, setTouched] = useState(false);
   const [passphrase, setPassphrase] = useState('');
   const [passphraseConfirm, setPassphraseConfirm] = useState('');
   const [useBiometrics, setUseBiometrics] = useState(false);
+  const [walletMode, setWalletMode] = useState<WalletMode>('hd');
   const [localError, setLocalError] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState(false);
 
-  if (status === 'unlocked') return <Redirect href="/(tabs)" />;
+  if (status === 'unlocked' && !restoring && step !== 3)
+    return <Redirect href="/(tabs)" />;
   if (status === 'locked') return <Redirect href="/unlock" />;
 
-  const submit = async () => {
-    setLocalError(null);
-    const phrase = normalizeMnemonic(imported);
+  const phrase = normalizeMnemonic(imported);
+  const wordCount = phrase ? phrase.split(' ').length : 0;
+  const valid = wordCount > 0 && isValidMnemonic(phrase);
 
+  const phraseError = useMemo(() => {
+    if (!touched || wordCount === 0) return null;
+    if (wordCount !== 12 && wordCount !== 24) {
+      return `Has escrito ${wordCount} palabras. Una frase BIP39 tiene 12 o 24.`;
+    }
     if (!isValidMnemonic(phrase)) {
+      return 'La última palabra no cuadra con la suma de comprobación. Revisa el orden y las palabras.';
+    }
+    return null;
+  }, [touched, wordCount, phrase]);
+
+  const paste = async () => {
+    try {
+      const text = await Clipboard.getStringAsync();
+      if (text) {
+        setImported(text);
+        setTouched(true);
+        setLocalError(null);
+      }
+    } catch (error) {
+      setLocalError(errorMessage(error));
+    }
+  };
+
+  const next = () => {
+    setTouched(true);
+    setLocalError(null);
+    if (!valid) {
       setLocalError(
-        'La frase no es válida. Deben ser 12 o 24 palabras del diccionario BIP39.'
+        phraseError ??
+          'La frase no es válida. Deben ser 12 o 24 palabras del diccionario BIP39.'
       );
       return;
     }
+    setStep(2);
+  };
+
+  const submit = async () => {
+    setLocalError(null);
     if (passphrase.length < MIN_PASSPHRASE_LENGTH) {
       setLocalError(
         `La passphrase debe tener al menos ${MIN_PASSPHRASE_LENGTH} caracteres.`
@@ -51,130 +100,172 @@ export default function RestoreWalletScreen() {
       setLocalError('La passphrase y su confirmación no coinciden.');
       return;
     }
+    if (passphraseStrength(passphrase) === 'weak') {
+      setLocalError(
+        'Elige una passphrase más fuerte: añade longitud, mayúsculas, números o símbolos.'
+      );
+      return;
+    }
 
     try {
+      setRestoring(true);
       await createWallet({
         mnemonic: phrase,
         passphrase,
         useBiometrics: useBiometrics && biometricAvailable,
+        walletMode,
       });
-      router.replace('/(tabs)');
+      setStep(3);
     } catch (error) {
+      setRestoring(false);
       setLocalError(errorMessage(error));
     }
   };
 
+  if (step === 3) {
+    return (
+      <Screen>
+        <OnboardingSuccess
+          title="Billetera restaurada"
+          text="La sesión con el operador está abierta y el saldo se sincronizará en unos segundos. Si tenías direcciones antiguas, el SDK las vigila igualmente."
+          address={address}
+          onDone={() => router.replace('/(tabs)')}
+          doneLabel="Ver mi billetera"
+        />
+        <Notice tone="warning">
+          Comprueba que la red de esta compilación coincide con la red de la
+          billetera que restauraste. Una frase en la red equivocada deriva otras
+          claves.
+        </Notice>
+      </Screen>
+    );
+  }
+
   return (
     <Screen>
-      <Title>Restaurar billetera</Title>
+      <StepHeader
+        title="Restaurar billetera"
+        subtitle={
+          step === 1
+            ? 'Escribe o pega la frase de recuperación de 12 o 24 palabras.'
+            : 'Elige una passphrase nueva para cifrar la billetera en este dispositivo.'
+        }
+        step={step}
+        total={2}
+        onBack={() => {
+          setLocalError(null);
+          if (step === 1) router.back();
+          else setStep(1);
+        }}
+      />
 
       {localError ? <ErrorBanner message={localError} /> : null}
 
-      <Card
-        title="Frase de recuperación"
-        subtitle="Escribe las 12 o 24 palabras separadas por espacios."
-      >
-        <Field
-          label="Frase"
-          value={imported}
-          onChangeText={setImported}
-          placeholder="palabra1 palabra2 palabra3…"
-          autoCapitalize="none"
-          autoCorrect={false}
-          multiline
-          numberOfLines={4}
-        />
-      </Card>
-
-      <Card
-        title="Passphrase de desbloqueo"
-        subtitle="Protege el acceso a la billetera en este dispositivo."
-      >
-        <Field
-          label="Passphrase"
-          value={passphrase}
-          onChangeText={setPassphrase}
-          placeholder={`Mínimo ${MIN_PASSPHRASE_LENGTH} caracteres`}
-          secureTextEntry
-          autoCapitalize="none"
-          autoCorrect={false}
-          autoComplete="off"
-        />
-        <Field
-          label="Confirmar passphrase"
-          value={passphraseConfirm}
-          onChangeText={setPassphraseConfirm}
-          placeholder="Repite la passphrase"
-          secureTextEntry
-          autoCapitalize="none"
-          autoCorrect={false}
-          autoComplete="off"
-        />
-        <Paragraph muted>
-          Si la olvidas, necesitarás volver a importar la frase de recuperación.
-        </Paragraph>
-      </Card>
-
-      {biometricAvailable ? (
-        <Pressable
-          onPress={() => setUseBiometrics(value => !value)}
-          style={styles.checkRow}
-        >
-          <View
-            style={[styles.checkbox, useBiometrics && styles.checkboxChecked]}
+      {step === 1 ? (
+        <>
+          <Card
+            title="Frase de recuperación"
+            subtitle="Las palabras deben estar en orden y separadas por espacios."
           >
-            <Text style={styles.checkboxMark}>{useBiometrics ? '✓' : ''}</Text>
-          </View>
-          <Text style={styles.checkLabel}>
-            Desbloquear también con huella o rostro en este dispositivo.
-          </Text>
-        </Pressable>
-      ) : (
-        <Notice tone="info">
-          Este dispositivo no ofrece biometría compatible con SecureStore. Usarás
-          tu passphrase para desbloquear.
-        </Notice>
-      )}
+            <Field
+              label="Frase"
+              value={imported}
+              onChangeText={value => {
+                setImported(value);
+                setLocalError(null);
+                if (!touched) setTouched(true);
+              }}
+              placeholder="palabra1 palabra2 palabra3…"
+              autoCapitalize="none"
+              autoCorrect={false}
+              multiline
+              numberOfLines={4}
+            />
+            <View style={styles.metaRow}>
+              <Text
+                style={[
+                  styles.meta,
+                  valid && styles.metaOk,
+                  phraseError && styles.metaError,
+                ]}
+              >
+                {wordCount === 0
+                  ? 'Sin palabras todavía'
+                  : `${wordCount} ${wordCount === 1 ? 'palabra' : 'palabras'}${
+                      valid ? ' · válida' : ''
+                    }`}
+              </Text>
+              <Pressable onPress={paste} style={styles.linkRow}>
+                <Text style={styles.link}>Pegar</Text>
+              </Pressable>
+            </View>
+            {phraseError ? (
+              <Text style={styles.errorText}>{phraseError}</Text>
+            ) : null}
+            <Paragraph muted>
+              Se aceptan frases BIP39 en inglés, que es el diccionario que usa el
+              SDK. La frase no sale de este dispositivo.
+            </Paragraph>
+          </Card>
+          <Button title="Continuar" onPress={next} />
+        </>
+      ) : null}
 
-      <Button
-        title="Restaurar billetera"
-        onPress={submit}
-        loading={busy}
-      />
+      {step === 2 ? (
+        <>
+          <SecuritySetup
+            passphrase={passphrase}
+            confirm={passphraseConfirm}
+            onChangePassphrase={setPassphrase}
+            onChangeConfirm={setPassphraseConfirm}
+            useBiometrics={useBiometrics}
+            onToggleBiometrics={() => setUseBiometrics(value => !value)}
+            biometricAvailable={biometricAvailable}
+            walletMode={walletMode}
+            onChangeWalletMode={setWalletMode}
+          />
+          <Button
+            title="Restaurar billetera"
+            onPress={submit}
+            loading={busy}
+            disabled={passphrase.length < MIN_PASSPHRASE_LENGTH}
+          />
+        </>
+      ) : null}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  checkRow: {
+  metaRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 6,
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surfaceAlt,
+    justifyContent: 'space-between',
+    gap: spacing.sm,
   },
-  checkboxChecked: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+  meta: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
   },
-  checkboxMark: {
-    color: colors.primaryText,
-    fontSize: 14,
-    fontWeight: '800',
+  metaOk: {
+    color: colors.success,
   },
-  checkLabel: {
-    flex: 1,
-    color: colors.text,
-    fontSize: 14,
-    lineHeight: 20,
+  metaError: {
+    color: colors.danger,
+  },
+  errorText: {
+    color: colors.danger,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  linkRow: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.xs,
+  },
+  link: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

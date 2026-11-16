@@ -1,45 +1,101 @@
-import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import {
+  Alert,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { Redirect, router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import {
+  Badge,
   Button,
   Card,
   ErrorBanner,
-  Field,
   Notice,
   Paragraph,
   Screen,
-  Title,
+  SectionLabel,
 } from '../components/ui';
+import {
+  OnboardingSuccess,
+  SecuritySetup,
+  SeedGrid,
+  SeedVerification,
+  StepHeader,
+  passphraseStrength,
+  pickSeedIndexes,
+  verifySeedAnswers,
+} from '../components/Onboarding';
 import { colors, spacing } from '../constants/theme';
 import { useWallet } from '../hooks/useWallet';
 import {
   generateWalletMnemonic,
   MIN_PASSPHRASE_LENGTH,
 } from '../lib/arkade/identity';
+import type { WalletMode } from '../lib/arkade/walletMode';
 import { errorMessage } from '../lib/format';
 
+type Step = 1 | 2 | 3 | 4;
+
 export default function CreateWalletScreen() {
-  const { status, busy, createWallet, biometricAvailable } = useWallet();
+  const { status, busy, createWallet, biometricAvailable, address } =
+    useWallet();
+
+  const [step, setStep] = useState<Step>(1);
   const [mnemonic, setMnemonic] = useState(() => generateWalletMnemonic());
-  const [confirmed, setConfirmed] = useState(false);
+  const [answers, setAnswers] = useState<Record<number, string>>({});
   const [passphrase, setPassphrase] = useState('');
   const [passphraseConfirm, setPassphraseConfirm] = useState('');
   const [useBiometrics, setUseBiometrics] = useState(false);
+  const [walletMode, setWalletMode] = useState<WalletMode>('hd');
   const [localError, setLocalError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
-  if (status === 'unlocked') return <Redirect href="/(tabs)" />;
+  if (status === 'unlocked' && !creating && step !== 4)
+    return <Redirect href="/(tabs)" />;
   if (status === 'locked') return <Redirect href="/unlock" />;
 
-  const words = mnemonic.split(' ');
+  const words = useMemo(() => mnemonic.split(' '), [mnemonic]);
+  const indexes = useMemo(
+    () => pickSeedIndexes(words.length, mnemonic),
+    [words.length, mnemonic]
+  );
+
+  const regenerate = () => {
+    setMnemonic(generateWalletMnemonic());
+    setAnswers({});
+    setLocalError(null);
+    setStep(1);
+  };
+
+  const copyPhrase = async () => {
+    await Clipboard.setStringAsync(mnemonic);
+    Alert.alert(
+      'Frase copiada',
+      'No la pegues en chats ni la guardes en la nube. Guárdala offline.'
+    );
+  };
+
+  const nextFromSeed = () => {
+    setLocalError(null);
+    setStep(2);
+  };
+
+  const nextFromVerify = () => {
+    setLocalError(null);
+    if (!verifySeedAnswers(words, indexes, answers)) {
+      setLocalError(
+        'Alguna palabra no coincide. Revisa la frase y vuelve a intentarlo.'
+      );
+      return;
+    }
+    setStep(3);
+  };
 
   const submit = async () => {
     setLocalError(null);
-    if (!confirmed) {
-      setLocalError('Confirma que guardaste la frase antes de continuar.');
-      return;
-    }
     if (passphrase.length < MIN_PASSPHRASE_LENGTH) {
       setLocalError(
         `La passphrase debe tener al menos ${MIN_PASSPHRASE_LENGTH} caracteres.`
@@ -50,209 +106,171 @@ export default function CreateWalletScreen() {
       setLocalError('La passphrase y su confirmación no coinciden.');
       return;
     }
+    if (passphraseStrength(passphrase) === 'weak') {
+      setLocalError(
+        'Elige una passphrase más fuerte: añade longitud, mayúsculas, números o símbolos.'
+      );
+      return;
+    }
 
     try {
+      setCreating(true);
       await createWallet({
         mnemonic,
         passphrase,
         useBiometrics: useBiometrics && biometricAvailable,
+        walletMode,
       });
-      router.replace('/(tabs)');
+      setStep(4);
     } catch (error) {
+      setCreating(false);
       setLocalError(errorMessage(error));
     }
   };
 
-  const copyPhrase = async () => {
-    await Clipboard.setStringAsync(mnemonic);
-    Alert.alert(
-      'Frase copiada',
-      'No la pegues en chats. Guárdala offline en un lugar seguro.'
-    );
+  const back = () => {
+    setLocalError(null);
+    if (step === 1) {
+      router.back();
+      return;
+    }
+    if (step === 2) setStep(1);
+    else if (step === 3) setStep(2);
   };
+
+  if (step === 4) {
+    return (
+      <Screen>
+        <OnboardingSuccess
+          title="Billetera creada"
+          text={
+            walletMode === 'hd'
+              ? 'Tu billetera usa direcciones rotativas. Guarda la frase de recuperación: es la única copia de tus llaves.'
+              : 'Tu billetera está lista con una dirección estática. Guarda la frase de recuperación: es la única copia de tus llaves.'
+          }
+          address={address}
+          onDone={() => router.replace('/(tabs)')}
+        />
+        <Notice tone="warning">
+          La passphrase protege este dispositivo, pero no sustituye a la frase de
+          recuperación. Si pierdes ambas, pierdes los fondos.
+        </Notice>
+      </Screen>
+    );
+  }
 
   return (
     <Screen>
-      <View style={styles.header}>
-        <Title>Nueva billetera</Title>
-        <Text style={styles.step}>1 de 1</Text>
-      </View>
+      <StepHeader
+        title="Nueva billetera"
+        subtitle={
+          step === 1
+            ? 'Anota estas 12 palabras. Son la única forma de recuperar tus fondos.'
+            : step === 2
+              ? 'Verifica que la copia es correcta antes de continuar.'
+              : 'Protege la billetera en este dispositivo y elige cómo recibir.'
+        }
+        step={step}
+        total={3}
+        onBack={back}
+      />
 
       {localError ? <ErrorBanner message={localError} /> : null}
 
-      <Card
-        title="Tu frase de recuperación"
-        subtitle="Anota estas 12 palabras en papel. Son la única forma de recuperar tus fondos."
-      >
-        <View style={styles.words}>
-          {words.map((word, index) => (
-            <View key={`${word}-${index}`} style={styles.word}>
-              <Text style={styles.wordIndex}>{index + 1}</Text>
-              <Text style={styles.wordText}>{word}</Text>
+      {step === 1 ? (
+        <>
+          <Card>
+            <View style={styles.revealHeader}>
+              <SectionLabel>Frase de recuperación</SectionLabel>
+              <Badge label="12 palabras" tone="primary" />
             </View>
-          ))}
-        </View>
-        <View style={styles.inlineButtons}>
-          <Button
-            title="Copiar"
-            variant="secondary"
-            onPress={copyPhrase}
+            <SeedGrid words={words} />
+            <View style={styles.inlineButtons}>
+              <Button title="Copiar" variant="secondary" onPress={copyPhrase} />
+              <Button
+                title="Generar otra"
+                variant="ghost"
+                onPress={regenerate}
+              />
+            </View>
+          </Card>
+
+          <Notice tone="danger">
+            Cualquiera con esta frase puede gastar tus fondos. No la escribas en
+            capturas de pantalla ni en gestores de contraseñas sin cifrado.
+          </Notice>
+
+          <Button title="He anotado la frase" onPress={nextFromSeed} />
+        </>
+      ) : null}
+
+      {step === 2 ? (
+        <>
+          <Card title="Confirmación" subtitle="Tres palabras al azar de tu frase.">
+            <SeedVerification
+              words={words}
+              indexes={indexes}
+              answers={answers}
+              onChange={(index, value) =>
+                setAnswers(previous => ({ ...previous, [index]: value }))
+              }
+            />
+          </Card>
+          <Pressable onPress={() => setStep(1)} style={styles.linkRow}>
+            <Text style={styles.link}>Ver la frase otra vez</Text>
+          </Pressable>
+          <Button title="Continuar" onPress={nextFromVerify} />
+        </>
+      ) : null}
+
+      {step === 3 ? (
+        <>
+          <SecuritySetup
+            passphrase={passphrase}
+            confirm={passphraseConfirm}
+            onChangePassphrase={setPassphrase}
+            onChangeConfirm={setPassphraseConfirm}
+            useBiometrics={useBiometrics}
+            onToggleBiometrics={() => setUseBiometrics(value => !value)}
+            biometricAvailable={biometricAvailable}
+            walletMode={walletMode}
+            onChangeWalletMode={setWalletMode}
           />
           <Button
-            title="Generar otra"
-            variant="ghost"
-            onPress={() => {
-              setMnemonic(generateWalletMnemonic());
-              setConfirmed(false);
-            }}
+            title="Crear billetera"
+            onPress={submit}
+            loading={busy}
+            disabled={passphrase.length < MIN_PASSPHRASE_LENGTH}
           />
-        </View>
-      </Card>
-
-      <Pressable
-        onPress={() => setConfirmed(value => !value)}
-        style={styles.checkRow}
-      >
-        <View style={[styles.checkbox, confirmed && styles.checkboxChecked]}>
-          <Text style={styles.checkboxMark}>{confirmed ? '✓' : ''}</Text>
-        </View>
-        <Text style={styles.checkLabel}>
-          Guardé la frase en un lugar seguro y entiendo que sin ella no puedo
-          recuperar la billetera.
-        </Text>
-      </Pressable>
-
-      <Card
-        title="Passphrase de desbloqueo"
-        subtitle="Cifra tu frase en este dispositivo y protege el acceso a la app."
-      >
-        <Field
-          label="Passphrase"
-          value={passphrase}
-          onChangeText={setPassphrase}
-          placeholder={`Mínimo ${MIN_PASSPHRASE_LENGTH} caracteres`}
-          secureTextEntry
-          autoCapitalize="none"
-          autoCorrect={false}
-          autoComplete="off"
-        />
-        <Field
-          label="Confirmar passphrase"
-          value={passphraseConfirm}
-          onChangeText={setPassphraseConfirm}
-          placeholder="Repite la passphrase"
-          secureTextEntry
-          autoCapitalize="none"
-          autoCorrect={false}
-          autoComplete="off"
-        />
-        <Paragraph muted>
-          Si la olvidas, necesitarás volver a importar la frase de recuperación.
-        </Paragraph>
-      </Card>
-
-      {biometricAvailable ? (
-        <Pressable
-          onPress={() => setUseBiometrics(value => !value)}
-          style={styles.checkRow}
-        >
-          <View
-            style={[styles.checkbox, useBiometrics && styles.checkboxChecked]}
-          >
-            <Text style={styles.checkboxMark}>{useBiometrics ? '✓' : ''}</Text>
-          </View>
-          <Text style={styles.checkLabel}>
-            Desbloquear también con huella o rostro en este dispositivo.
-          </Text>
-        </Pressable>
-      ) : (
-        <Notice tone="info">
-          Este dispositivo no ofrece biometría compatible con SecureStore. Usarás
-          tu passphrase para desbloquear.
-        </Notice>
-      )}
-
-      <Button
-        title="Crear billetera"
-        onPress={submit}
-        loading={busy}
-        disabled={!confirmed}
-      />
+          <Paragraph muted>
+            Al crear la billetera se abre una sesión con el operador de{' '}
+            {walletMode === 'hd' ? 'Arkade' : 'Arkade'} y se prepara tu primera
+            dirección de recepción.
+          </Paragraph>
+        </>
+      ) : null}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
+  revealHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  step: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  words: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: spacing.sm,
-    paddingVertical: spacing.sm,
-  },
-  word: {
-    width: '47%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: 8,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 8,
-  },
-  wordIndex: {
-    color: colors.textMuted,
-    fontSize: 11,
-    width: 16,
-    textAlign: 'right',
-  },
-  wordText: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: '600',
   },
   inlineButtons: {
     flexDirection: 'row',
     gap: spacing.sm,
   },
-  checkRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
+  linkRow: {
+    alignSelf: 'center',
     paddingVertical: spacing.xs,
   },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surfaceAlt,
-  },
-  checkboxChecked: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  checkboxMark: {
-    color: colors.primaryText,
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  checkLabel: {
-    flex: 1,
-    color: colors.text,
-    fontSize: 14,
-    lineHeight: 20,
+  link: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '700',
   },
 });
