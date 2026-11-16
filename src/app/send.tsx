@@ -65,6 +65,15 @@ const isTerminal = (outcome: string) =>
 
 const isSuccess = (outcome: string) => outcome === 'paid' || outcome === 'claimed';
 
+/** Detalle técnico del error, para poder copiarlo y reportarlo. */
+function describeError(error: unknown): string {
+  if (error instanceof Error) {
+    const stack = error.stack ? `\n\n${error.stack}` : '';
+    return `${error.name}: ${error.message}${stack}`;
+  }
+  return String(error);
+}
+
 export default function SendScreen() {
   const { sendPayment, watchOutcome, balance, refresh, network } = useWallet();
   const { formatBitcoin } = usePreferences();
@@ -75,6 +84,7 @@ export default function SendScreen() {
   const [maxFee, setMaxFee] = useState('500');
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [result, setResult] = useState<SendResult | null>(null);
   const unsubscribeRef = useRef<null | (() => void)>(null);
 
@@ -99,6 +109,7 @@ export default function SendScreen() {
     setDestination(value);
     setResult(null);
     setLocalError(null);
+    setErrorDetails(null);
     const next = parseDestination(value);
     if (next.amountSats && next.amountSats > 0) {
       setAmount(String(next.amountSats));
@@ -192,7 +203,9 @@ export default function SendScreen() {
         });
       }
     } catch (error) {
+      console.error('[send] fallo al enviar', error);
       setLocalError(swapErrorMessage(error));
+      setErrorDetails(describeError(error));
       setStage('form');
     } finally {
       setBusy(false);
@@ -319,6 +332,13 @@ export default function SendScreen() {
         <Title>Confirmar envío</Title>
 
         {localError ? <ErrorBanner message={localError} /> : null}
+        {errorDetails ? (
+          <CopyField
+            label="Copiar detalles del error"
+            value={errorDetails}
+            displayValue={errorDetails.split('\n').slice(0, 3).join('\n')}
+          />
+        ) : null}
 
         <Card
           title={destinationKindLabel(kind)}
@@ -405,6 +425,13 @@ export default function SendScreen() {
       </View>
 
       {localError ? <ErrorBanner message={localError} /> : null}
+      {errorDetails ? (
+        <CopyField
+          label="Copiar detalles del error"
+          value={errorDetails}
+          displayValue={errorDetails.split('\n').slice(0, 3).join('\n')}
+        />
+      ) : null}
 
       <Card>
         <Field

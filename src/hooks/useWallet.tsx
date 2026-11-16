@@ -41,6 +41,7 @@ import {
 } from '../lib/arkade/identity';
 import {
   forgetLnurlSecrets,
+  hasPendingSwaps,
   isArkadeAddress,
   payThroughSolver,
   receiveLightning,
@@ -151,6 +152,12 @@ const WalletContext = createContext<WalletContextValue | null>(null);
 
 /** Tras este tiempo en segundo plano la wallet se bloquea. */
 const RELOCK_AFTER_MS = 2 * 60 * 1000;
+
+/**
+ * Ventana extra sin bloquear cuando hay un swap pendiente: cerrar la sesión
+ * detiene el drive que reclama el HTLC (onchain) o el lockup (Lightning).
+ */
+const SWAP_KEEPALIVE_MS = 30 * 60 * 1000;
 
 /** Hex de un script, sin depender de utilidades externas al SDK. */
 const toHex = (bytes: Uint8Array): string =>
@@ -457,6 +464,14 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       setBusy(true);
       setError(null);
       try {
+        // Crear o restaurar es una wallet nueva: el estado persistido (contratos,
+        // descriptores HD y swaps) pertenece a otra semilla y no se puede
+        // reutilizar. Si no se borra, el SDK hereda descriptores ajenos y falla
+        // al firmar preimágenes de swap.
+        await closeArkadeSession();
+        resetState();
+        await wipeStorageDatabases();
+
         // El modo se guarda antes de abrir la sesión porque `Wallet.create`
         // resuelve la estrategia de direcciones al arrancar.
         await saveWalletMode(requestedMode);
@@ -484,7 +499,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         setBusy(false);
       }
     },
-    [biometricAvailable, connect]
+    [biometricAvailable, connect, resetState]
   );
 
   const unlock = useCallback(
@@ -812,7 +827,19 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             Date.now() - since > RELOCK_AFTER_MS &&
             statusRef.current === 'unlocked'
           ) {
-            void lock();
+            void (async () => {
+              // Cerrar la sesión detiene el drive de swaps. Un envío onchain
+              // necesita reclamar su HTLC y una recepción Lightning su lockup,
+              // así que se da una ventana extra antes de bloquear.
+              const grace =
+                Date.now() - since <= SWAP_KEEPALIVE_MS &&
+                (await hasPendingSwaps());
+              if (grace) {
+                if (appStateRef.current === 'active') void syncBalance();
+                return;
+              }
+              await lock();
+            })();
             return;
           }
           if (statusRef.current === 'unlocked') void syncBalance();

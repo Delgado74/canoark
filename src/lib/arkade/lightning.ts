@@ -1,6 +1,11 @@
 import * as SecureStore from 'expo-secure-store';
 import { ArkAddress, isValidArkAddress } from '@arkade-os/sdk';
-import { btcOn, isSwapError, type PayResult } from '@arkade-os/swap';
+import {
+  btcOn,
+  isSwapError,
+  type PayResult,
+  type Swap,
+} from '@arkade-os/swap';
 import {
   preimageForSwapRecord,
   type SwapSecretsProjection,
@@ -151,10 +156,58 @@ export function watchSwap(
   });
 }
 
+/** Estados en los que el drive todavía tiene trabajo pendiente. */
+export const PENDING_SWAP_OUTCOMES = [
+  'accepted',
+  'funding',
+  'funded',
+  'open',
+  'filled',
+  'cancelling',
+  'refunding',
+] as const;
+
+export function isPendingSwapOutcome(outcome: string): boolean {
+  return (PENDING_SWAP_OUTCOMES as readonly string[]).includes(outcome);
+}
+
+/** Todos los swaps guardados, con su estado actual. */
+export async function listSwaps(): Promise<Swap[]> {
+  const { swaps } = getArkadeSession();
+  return swaps.swaps();
+}
+
+/**
+ * Si hay un swap sin terminar. Se consulta antes de bloquear la wallet: cerrar
+ * la sesión detiene el drive, y un envío onchain necesita reclamar su HTLC.
+ */
+export async function hasPendingSwaps(): Promise<boolean> {
+  try {
+    const swaps = await listSwaps();
+    return swaps.some(swap => isPendingSwapOutcome(swap.outcome));
+  } catch {
+    return false;
+  }
+}
+
 export function swapErrorMessage(error: unknown): string {
-  if (isSwapError(error)) return `${error.name}: ${error.message}`;
-  if (error instanceof Error) return error.message;
-  return String(error);
+  const parts: string[] = [];
+  let current: unknown = error;
+  for (let depth = 0; current && depth < 5; depth += 1) {
+    const message =
+      current instanceof Error
+        ? depth === 0 && isSwapError(current)
+          ? `${current.name}: ${current.message}`
+          : current.message
+        : String(current);
+    if (message && !parts.includes(message)) parts.push(message);
+    current =
+      current instanceof Error
+        ? (current as { cause?: unknown }).cause
+        : undefined;
+  }
+  if (parts.length === 0) return String(error);
+  return parts.join('\nCausa: ');
 }
 
 /* ------------------------------------------------------------------ */
