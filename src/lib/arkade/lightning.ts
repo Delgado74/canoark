@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import { ArkAddress, isValidArkAddress } from '@arkade-os/sdk';
 import { btcOn, isSwapError, type PayResult } from '@arkade-os/swap';
 import {
   preimageForSwapRecord,
@@ -29,10 +30,29 @@ export function isOnchainAddress(value: string): boolean {
   return /^(bc1|tb1|bcrt1)[a-z0-9]{8,}$/i.test(value.trim());
 }
 
+/**
+ * HRP real de una dirección Arkade válida, sea de la red activa o no.
+ * `isValidArkAddress` del SDK sólo comprueba el checksum bech32m: acepta tanto
+ * `ark1…` como `tark1…`. Decodificar da el HRP sin el separador y permite
+ * detectar direcciones de otra red.
+ */
+export function arkadeAddressHrp(value: string): string | null {
+  const address = value.trim();
+  if (!isValidArkAddress(address)) return null;
+  try {
+    return ArkAddress.decode(address).hrp.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Dirección Arkade válida para la red activa. El SDK valida el checksum; aquí
+ * se añade la comprobación de red para no enviar a un `ark1…` desde Mutinynet
+ * (o al revés) y perder el pago.
+ */
 export function isArkadeAddress(value: string): boolean {
-  return new RegExp(`^${ACTIVE_NETWORK.addressPrefix}1[a-z0-9]+$`, 'i').test(
-    value.trim()
-  );
+  return arkadeAddressHrp(value) === ACTIVE_NETWORK.addressHrp;
 }
 
 const feeCeiling = (maxFeeSats: number) => ({

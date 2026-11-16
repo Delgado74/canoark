@@ -97,7 +97,7 @@ export default function CashSettingsScreen() {
   const expectedHrp = network.isMainnet ? 'arkadecash' : 'tarkadecash';
   // El SDK deriva el HRP de la red (`ark` o `tark`); el prefijo visible añade
   // el separador bech32m, así que aquí no se usa `addressPrefix`.
-  const addressHrp = network.isMainnet ? 'ark' : 'tark';
+  const addressHrp = network.addressHrp;
 
   const amountProblem = useMemo(() => {
     if (!amount.trim()) return null;

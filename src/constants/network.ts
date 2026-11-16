@@ -20,6 +20,12 @@ export type NetworkConfig = {
    */
   onchainExplorerUrl: string;
   addressPrefix: 'ark1' | 'tark1';
+  /**
+   * HRP bech32m de Arkade sin el separador `1`. Es lo que espera
+   * `ArkAddress.encode()` y lo que se compara para rechazar direcciones de otra
+   * red.
+   */
+  addressHrp: 'ark' | 'tark';
   /** Servicio de delegación de renovaciones, igual que Arkade Wallet. */
   delegateUrl: string | null;
   /** Índice de solvers publicado por arkade-os/solver-registry. */
@@ -46,6 +52,7 @@ export const NETWORKS: Record<ArkadeNetworkName, NetworkConfig> = {
     explorerUrl: 'https://arkade.space',
     onchainExplorerUrl: 'https://mempool.space',
     addressPrefix: 'ark1',
+    addressHrp: 'ark',
     delegateUrl: 'https://delegate.arkade.money',
     solverRegistryUrl: `${SOLVER_REGISTRY_BASE}/bitcoin.json`,
     lnurlServer: 'https://lnurl.arkade.sh',
@@ -63,6 +70,7 @@ export const NETWORKS: Record<ArkadeNetworkName, NetworkConfig> = {
     explorerUrl: 'https://explorer.mutinynet.arkade.sh',
     onchainExplorerUrl: 'https://mutinynet.com',
     addressPrefix: 'tark1',
+    addressHrp: 'tark',
     delegateUrl: 'https://delegator.mutinynet.arkade.sh',
     solverRegistryUrl: `${SOLVER_REGISTRY_BASE}/mutinynet.json`,
     lnurlServer: 'https://lnurl.mutinynet.arkade.sh',

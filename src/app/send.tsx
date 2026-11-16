@@ -18,7 +18,7 @@ import {
 import { colors, spacing } from '../constants/theme';
 import { useWallet } from '../hooks/useWallet';
 import { usePreferences } from '../hooks/usePreferences';
-import { swapErrorMessage } from '../lib/arkade/lightning';
+import { arkadeAddressHrp, swapErrorMessage } from '../lib/arkade/lightning';
 import {
   destinationKindLabel,
   parseDestination,
@@ -118,6 +118,12 @@ export default function SendScreen() {
     if (kind === 'unknown') {
       if (parsed.lnurl) {
         return 'Las Lightning Address (usuario@dominio) todavía no se pueden pagar directamente desde CanoArk. Pide una factura BOLT11 o usa una dirección Arkade.';
+      }
+      const hrp = arkadeAddressHrp(parsed.raw || destination);
+      if (hrp) {
+        return `Esa dirección Arkade es de ${
+          hrp === 'ark' ? 'Bitcoin mainnet' : 'otra red de pruebas'
+        }. CanoArk está conectado a ${network.label}: usa una dirección ${network.addressPrefix}….`;
       }
       return 'Destino no reconocido. Usa una factura Lightning (lnbc…), una dirección onchain (bc1… / tb1…) o una dirección Arkade (ark1… / tark1…). También puedes pegar un BIP21.';
     }

@@ -1,4 +1,4 @@
-import { BIP21, isValidArkAddress } from '@arkade-os/sdk';
+import { BIP21 } from '@arkade-os/sdk';
 import { isArkadeAddress, isLightningInvoice, isOnchainAddress } from './arkade/lightning';
 
 export type ParsedDestinationKind = 'arkade' | 'lightning' | 'onchain' | 'unknown';
@@ -39,7 +39,7 @@ export function parseDestination(input: string): ParsedDestination {
       const address =
         typeof params.address === 'string' ? params.address : undefined;
 
-      if (ark && (isValidArkAddress(ark) || isArkadeAddress(ark))) {
+      if (ark && isArkadeAddress(ark)) {
         return { raw: ark, kind: 'arkade', amountSats };
       }
       if (lightning) {
