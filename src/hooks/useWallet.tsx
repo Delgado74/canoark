@@ -15,6 +15,7 @@ import {
   Estimator,
   VtxoScript,
   hasBoardingTxExpired,
+  type ArkadeCashClaimResult,
   type ArkTransaction,
   type ExtendedCoin,
   type NormalizedExtendedVirtualCoin,
@@ -46,6 +47,12 @@ import {
   watchSwap,
 } from '../lib/arkade/lightning';
 import { wipeStorageDatabases } from '../lib/storage/sqlite';
+import {
+  clearWalletMode,
+  loadWalletMode,
+  saveWalletMode,
+  type WalletMode,
+} from '../lib/arkade/walletMode';
 import { errorMessage } from '../lib/format';
 
 export type WalletStatus = 'loading' | 'empty' | 'locked' | 'unlocked';
@@ -62,11 +69,20 @@ type WalletContextValue = {
   balance: BalanceView | null;
   address: string | null;
   boardingAddress: string | null;
+  /** Todas las direcciones de boarding vigiladas (actual + históricas). */
+  boardingAddresses: string[];
   history: ArkTransaction[];
   /** Virtual outputs y UTXOs de boarding, con vencimiento y estado. */
   coins: CoinView[];
   coinsLoaded: boolean;
   network: NetworkConfig;
+  /** Estrategia de direcciones de recepción (estática o HD). */
+  walletMode: WalletMode;
+  /**
+   * Guarda el modo para la próxima apertura de sesión. Cambiarlo no mueve
+   * fondos: las direcciones anteriores siguen siendo gastables.
+   */
+  setWalletMode: (mode: WalletMode) => Promise<void>;
   /** true si este dispositivo puede usar biometría con SecureStore (Class 3). */
   biometricAvailable: boolean;
   /** true si la wallet guardada tiene desbloqueo biométrico configurado. */
@@ -76,6 +92,7 @@ type WalletContextValue = {
     mnemonic: string;
     passphrase: string;
     useBiometrics?: boolean;
+    walletMode?: WalletMode;
   }) => Promise<CreateWalletResult>;
   unlock: (options?: {
     passphrase?: string;
@@ -103,6 +120,20 @@ type WalletContextValue = {
   loadCoins: () => Promise<CoinView[]>;
   /** Canjea una o varias notas Ark separadas por espacios. */
   redeemNotes: (note: string) => Promise<void>;
+  /** Importe mínimo (dust) que acepta el operador para un ArkadeCash. */
+  cashDustSats: number;
+  /**
+   * Crea un ArkadeCash por `amountSats` y devuelve el token bearer
+   * (`arkadecash1…` / `tarkadecash1…`). Quien lo tenga puede reclamarlo.
+   */
+  createCash: (amountSats: number) => Promise<string>;
+  /**
+   * Reclama un ArkadeCash: barre lo gastable al saldo y devuelve lo que quedó
+   * en recuperación o sin reclamar.
+   */
+  claimCash: (cashString: string) => Promise<ArkadeCashClaimResult>;
+  /** Actualiza el modo de direcciones y fuerza una sesión nueva. */
+  applyWalletMode: (mode: WalletMode) => Promise<void>;
   /**
    * Convierte los depósitos onchain confirmados en saldo Arkade sin esperar
    * al ciclo automático del SDK. Devuelve los sats liquidados.
@@ -243,14 +274,18 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [balance, setBalance] = useState<BalanceView | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [boardingAddress, setBoardingAddress] = useState<string | null>(null);
+  const [boardingAddresses, setBoardingAddresses] = useState<string[]>([]);
   const [history, setHistory] = useState<ArkTransaction[]>([]);
   const [coins, setCoins] = useState<CoinView[]>([]);
   const [coinsLoaded, setCoinsLoaded] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [biometricAvailable] = useState(() => canUseBiometrics());
+  const [walletMode, setWalletModeState] = useState<WalletMode>('static');
+  const [cashDustSats, setCashDustSats] = useState(330);
 
   const mnemonicRef = useRef<string | null>(null);
+  const walletModeRef = useRef<WalletMode>('static');
   const statusRef = useRef<WalletStatus>('loading');
   const backgroundAtRef = useRef<number | null>(null);
   const appStateRef = useRef<AppStateStatus>(
@@ -266,11 +301,14 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [exists, biometric] = await Promise.all([
+      const [exists, biometric, mode] = await Promise.all([
         hasStoredWallet(),
         hasBiometricUnlock(),
+        loadWalletMode(),
       ]);
       if (cancelled) return;
+      walletModeRef.current = mode;
+      setWalletModeState(mode);
       setStatus(exists ? 'locked' : 'empty');
       setBiometricEnabled(biometric);
     })();
@@ -283,10 +321,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setBalance(null);
     setAddress(null);
     setBoardingAddress(null);
+    setBoardingAddresses([]);
     setHistory([]);
     setCoins([]);
     setCoinsLoaded(false);
     setSessionReady(false);
+    setCashDustSats(330);
     setError(null);
   }, []);
 
@@ -298,7 +338,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       if (!mnemonic) {
         throw new Error('La billetera está bloqueada.');
       }
-      return openArkadeSession(mnemonic);
+      return openArkadeSession(mnemonic, walletModeRef.current);
     }
   }, []);
 
@@ -326,6 +366,19 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setAddress(nextAddress);
     setBoardingAddress(nextBoardingAddress);
     setBalance(toBalanceView(rawBalance));
+    setCashDustSats(Number(session.wallet.dustAmount));
+
+    // El SDK vigila la dirección actual y las históricas. Mostrarlas permite
+    // comprobar depósitos enviados a una dirección anterior (p. ej. tras
+    // activar HD o restaurar en otro dispositivo).
+    try {
+      const watched = await session.wallet.getBoardingAddresses();
+      setBoardingAddresses(
+        Array.from(new Set([nextBoardingAddress, ...watched]))
+      );
+    } catch {
+      setBoardingAddresses([nextBoardingAddress]);
+    }
 
     try {
       const transactions = await session.wallet.getTransactionHistory();
@@ -389,10 +442,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       mnemonic,
       passphrase,
       useBiometrics = false,
+      walletMode: requestedMode = 'hd',
     }: {
       mnemonic: string;
       passphrase: string;
       useBiometrics?: boolean;
+      walletMode?: WalletMode;
     }) => {
       const phrase = normalizeMnemonic(mnemonic);
       if (!isValidMnemonic(phrase)) {
@@ -402,6 +457,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       setBusy(true);
       setError(null);
       try {
+        // El modo se guarda antes de abrir la sesión porque `Wallet.create`
+        // resuelve la estrategia de direcciones al arrancar.
+        await saveWalletMode(requestedMode);
+        walletModeRef.current = requestedMode;
+        setWalletModeState(requestedMode);
+
         const result = await createWalletSecrets({
           mnemonic: phrase,
           passphrase,
@@ -480,8 +541,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       }
       await closeArkadeSession();
       await deleteWalletSecrets();
+      await clearWalletMode();
       await forgetLnurlSecrets();
       await wipeStorageDatabases();
+      walletModeRef.current = 'static';
+      setWalletModeState('static');
       resetState();
       setStatus('empty');
       statusRef.current = 'empty';
@@ -558,6 +622,56 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     [ensureSession, refresh]
   );
 
+  const createCash = useCallback(
+    async (amountSats: number) => {
+      const session = await ensureSession();
+      const dust = Number(session.wallet.dustAmount);
+      if (!Number.isSafeInteger(amountSats) || amountSats < dust) {
+        throw new Error(
+          `El importe debe ser un número entero de sats igual o mayor que ${dust}.`
+        );
+      }
+      try {
+        const cash = await session.wallet.createCash(amountSats);
+        await refresh();
+        return cash;
+      } catch (error) {
+        // Si el envío falló después de enviarse, `ArkadeCashCreateError` lleva
+        // el token con el que se recuperan los fondos. La pantalla lo muestra.
+        await refresh().catch(() => undefined);
+        throw error;
+      }
+    },
+    [ensureSession, refresh]
+  );
+
+  const claimCash = useCallback(
+    async (cashString: string) => {
+      const session = await ensureSession();
+      const raw = cashString.trim();
+      if (!raw) throw new Error('Introduce un ArkadeCash.');
+      const result = await session.wallet.claimCash(raw);
+      await refresh();
+      return result;
+    },
+    [ensureSession, refresh]
+  );
+
+  const applyWalletMode = useCallback(
+    async (mode: WalletMode) => {
+      await saveWalletMode(mode);
+      walletModeRef.current = mode;
+      setWalletModeState(mode);
+      // Reabre la sesión para que el SDK aplique el nuevo modo de direcciones.
+      await closeArkadeSession();
+      setSessionReady(false);
+      if (statusRef.current === 'unlocked') {
+        await connect();
+      }
+    },
+    [connect]
+  );
+
   const settleBoarding = useCallback(async () => {
     const session = await ensureSession();
     const [utxos, info] = await Promise.all([
@@ -623,6 +737,17 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   );
 
   const revealMnemonic = useCallback(() => mnemonicRef.current, []);
+
+  /**
+   * Persiste la estrategia de direcciones. La sesión abierta conserva la suya
+   * hasta el siguiente desbloqueo; así se evita reconstruir la wallet a mitad
+   * de una operación.
+   */
+  const setWalletMode = useCallback(async (mode: WalletMode) => {
+    await saveWalletMode(mode);
+    walletModeRef.current = mode;
+    setWalletModeState(mode);
+  }, []);
 
   /**
    * El SDK emite avisos de fondos nuevos (boarding y virtual outputs) mientras
@@ -706,10 +831,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     balance,
     address,
     boardingAddress,
+    boardingAddresses,
     history,
     coins,
     coinsLoaded,
     network: ACTIVE_NETWORK,
+    walletMode,
+    setWalletMode,
     biometricAvailable,
     biometricEnabled,
     clearError: () => setError(null),
@@ -724,6 +852,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     revealMnemonic,
     loadCoins,
     redeemNotes,
+    cashDustSats,
+    createCash,
+    claimCash,
+    applyWalletMode,
     settleBoarding,
     changePassphrase,
   };

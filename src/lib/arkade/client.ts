@@ -12,6 +12,7 @@ import { createSwapClient, type SwapClient } from '@arkade-os/swap';
 import { ACTIVE_NETWORK } from '../../constants/network';
 import { openStorage, type AppStorage } from '../storage/sqlite';
 import { identityFromMnemonic } from './identity';
+import type { WalletMode } from './walletMode';
 
 export type ArkadeSession = {
   wallet: Wallet;
@@ -31,7 +32,8 @@ let session: ArkadeSession | null = null;
  * el swap client reclama y reembolsa swaps solo mientras sigue vivo.
  */
 export async function openArkadeSession(
-  mnemonic: string
+  mnemonic: string,
+  walletMode: WalletMode = 'static'
 ): Promise<ArkadeSession> {
   await closeArkadeSession();
 
@@ -49,9 +51,10 @@ export async function openArkadeSession(
       // que getBoardingUtxos() consulte siempre el explorador correcto.
       onchainProvider: new EsploraProvider(ACTIVE_NETWORK.esploraUrl),
       storage: storage.walletStorage,
-      // Igual que Arkade Wallet: dirección de recepción estática y delegación
-      // de renovaciones al servicio configurado para la red.
-      walletMode: 'static',
+      // El modo se elige al crear/restaurar. `hd` rota la dirección de
+      // recepción (BIP86) y vigila la ventana anterior; `static` mantiene una
+      // única dirección, como las instalaciones antiguas.
+      walletMode,
       ...(ACTIVE_NETWORK.delegateUrl
         ? { delegateProvider: new RestDelegateProvider(ACTIVE_NETWORK.delegateUrl) }
         : {}),
