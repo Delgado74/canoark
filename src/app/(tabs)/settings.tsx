@@ -18,6 +18,8 @@ import {
 import { colors, spacing } from '../../constants/theme';
 import { useWallet } from '../../hooks/useWallet';
 import { usePreferences } from '../../hooks/usePreferences';
+import { ChoiceRow } from '../../components/SettingsScreen';
+import { walletModeLabel, type WalletMode } from '../../lib/arkade/walletMode';
 import { errorMessage } from '../../lib/format';
 
 const REPO_URL = 'https://github.com/Delgado74/canoark';
@@ -67,6 +69,8 @@ export default function SettingsScreen() {
     biometricAvailable,
     biometricEnabled,
     revealMnemonic,
+    walletMode,
+    applyWalletMode,
   } = useWallet();
   const { preferences } = usePreferences();
 
@@ -129,6 +133,29 @@ export default function SettingsScreen() {
   const unitValue =
     preferences.unit === 'BIP177' ? '₿ (BIP177)' : preferences.unit;
 
+  const changeWalletMode = (mode: WalletMode) => {
+    if (mode === walletMode) return;
+    Alert.alert(
+      'Cambiar direcciones de recepción',
+      'Se reabrirá la sesión con el operador para aplicar el cambio. Las direcciones anteriores siguen siendo válidas y tus fondos no se mueven.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Aplicar',
+          onPress: () => {
+            void (async () => {
+              try {
+                await applyWalletMode(mode);
+              } catch (err) {
+                Alert.alert('Error', errorMessage(err));
+              }
+            })();
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <Screen refreshing={refreshing} onRefresh={refresh}>
       <View style={styles.header}>
@@ -181,6 +208,13 @@ export default function SettingsScreen() {
           label="Notas"
           value="Canjear ArkNote"
           onPress={() => router.push('/settings/notes')}
+        />
+
+        <MenuRow
+          icon="◆"
+          label="Arkade Cash"
+          value="Crear y reclamar"
+          onPress={() => router.push('/settings/cash')}
         />
 
         <SettingsItem
@@ -293,6 +327,35 @@ export default function SettingsScreen() {
             variant="secondary"
             onPress={confirmLock}
           />
+        </SettingsItem>
+
+        <SettingsItem
+          icon="🧭"
+          label="Direcciones"
+          value={walletModeLabel(walletMode)}
+          open={open === 'addresses'}
+          onToggle={() => toggle('addresses')}
+        >
+          <Paragraph muted>
+            El operador es el mismo; cambia cómo el SDK deriva tus direcciones de
+            recepción.
+          </Paragraph>
+          <ChoiceRow
+            label="Rotativas (HD)"
+            hint="Recomendado: una dirección nueva por recepción y vigilancia de las anteriores (BIP86)."
+            selected={walletMode === 'hd'}
+            onPress={() => changeWalletMode('hd')}
+          />
+          <ChoiceRow
+            label="Estática"
+            hint="Una sola dirección Arkade y una sola de boarding, como las instalaciones antiguas."
+            selected={walletMode === 'static'}
+            onPress={() => changeWalletMode('static')}
+          />
+          <Notice tone="info">
+            Las direcciones antiguas siguen en la ventana de vigilancia del SDK.
+            Si cambias de modo, el saldo no se mueve.
+          </Notice>
         </SettingsItem>
 
         <SettingsItem
