@@ -2,8 +2,11 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import type { ArkTransaction } from '@arkade-os/sdk';
 import { colors, spacing } from '../constants/theme';
+import { useAssetInfo } from '../hooks/useAssetInfo';
 import { usePreferences } from '../hooks/usePreferences';
-import { shorten } from '../lib/format';
+import { formatUnits } from '../lib/arkade/assets';
+import { bareAssetId, shortAssetId } from '../lib/arkade/assetInfo';
+import { formatSats, shorten } from '../lib/format';
 
 export function transactionKey(tx: ArkTransaction): string {
   return (
@@ -89,6 +92,18 @@ export function TransactionRow({ tx }: { tx: ArkTransaction }) {
   const status = transactionStatus(tx);
   const txid = transactionTxid(tx);
 
+  const assets = tx.assets ?? [];
+  const infos = useAssetInfo(assets.map(asset => asset.assetId));
+  const hasAssets = assets.length > 0;
+  const assetText = assets
+    .map(asset => {
+      const id = bareAssetId(asset.assetId);
+      const info = infos[id];
+      const ticker = info?.ticker ?? shortAssetId(id);
+      return `${formatUnits(asset.amount, info?.decimals ?? 0)} ${ticker}`;
+    })
+    .join(' · ');
+
   const openDetail = () => {
     router.push({
       pathname: '/transaction',
@@ -101,6 +116,14 @@ export function TransactionRow({ tx }: { tx: ArkTransaction }) {
         arkTxid: tx.key.arkTxid ?? '',
         boardingTxid: tx.key.boardingTxid ?? '',
         commitmentTxid: tx.key.commitmentTxid ?? '',
+        assets: hasAssets
+          ? JSON.stringify(
+              assets.map(asset => ({
+                assetId: bareAssetId(asset.assetId),
+                amount: asset.amount.toString(),
+              }))
+            )
+          : '',
       },
     });
   };
@@ -108,9 +131,9 @@ export function TransactionRow({ tx }: { tx: ArkTransaction }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${incoming ? 'Recibido' : 'Enviado'} ${formatBitcoin(
-        Math.abs(tx.amount)
-      )}, ${status.label}`}
+      accessibilityLabel={`${incoming ? 'Recibido' : 'Enviado'} ${
+        hasAssets ? assetText : formatBitcoin(Math.abs(tx.amount))
+      }, ${status.label}`}
       onPress={openDetail}
       style={({ pressed }) => [styles.row, pressed && styles.pressed]}
     >
@@ -120,7 +143,8 @@ export function TransactionRow({ tx }: { tx: ArkTransaction }) {
       <View style={styles.middle}>
         <View style={styles.titleRow}>
           <Text style={styles.title} numberOfLines={1}>
-            {incoming ? 'Recibido' : 'Enviado'} · {tagLabel(tx.tag)}
+            {incoming ? 'Recibido' : 'Enviado'} ·{' '}
+            {hasAssets ? 'Activo' : tagLabel(tx.tag)}
           </Text>
         </View>
         <Text style={styles.date} numberOfLines={1}>
@@ -138,15 +162,29 @@ export function TransactionRow({ tx }: { tx: ArkTransaction }) {
         </Text>
       </View>
       <View style={styles.right}>
-        <Text style={[styles.amount, { color }]} numberOfLines={1}>
-          {sign}
-          {bitcoinParts(Math.abs(tx.amount)).value}
-        </Text>
-        {bitcoinParts(Math.abs(tx.amount)).unit ? (
-          <Text style={styles.unit}>
-            {bitcoinParts(Math.abs(tx.amount)).unit}
-          </Text>
-        ) : null}
+        {hasAssets ? (
+          <>
+            <Text style={[styles.amount, { color }]} numberOfLines={1}>
+              {sign}
+              {assetText}
+            </Text>
+            <Text style={styles.unit} numberOfLines={1}>
+              {formatSats(Math.abs(tx.amount))} sats · portador
+            </Text>
+          </>
+        ) : (
+          <>
+            <Text style={[styles.amount, { color }]} numberOfLines={1}>
+              {sign}
+              {bitcoinParts(Math.abs(tx.amount)).value}
+            </Text>
+            {bitcoinParts(Math.abs(tx.amount)).unit ? (
+              <Text style={styles.unit}>
+                {bitcoinParts(Math.abs(tx.amount)).unit}
+              </Text>
+            ) : null}
+          </>
+        )}
       </View>
     </Pressable>
   );

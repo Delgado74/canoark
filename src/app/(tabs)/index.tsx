@@ -17,6 +17,7 @@ import { colors, spacing } from '../../constants/theme';
 import { useWallet } from '../../hooks/useWallet';
 import { usePreferences } from '../../hooks/usePreferences';
 import { formatSats } from '../../lib/format';
+import { AssetBalances } from '../../components/AssetBalances';
 import {
   TransactionRow,
   transactionKey,
@@ -150,6 +151,10 @@ export default function WalletScreen() {
           </View>
         )}
       </Card>
+
+      {balance && balance.assets.length > 0 ? (
+        <AssetBalances assets={balance.assets} />
+      ) : null}
 
       <View style={styles.actions}>
         <QuickAction

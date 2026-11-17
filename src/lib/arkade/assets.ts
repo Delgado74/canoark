@@ -7,6 +7,7 @@ import {
   type Swap,
 } from '@arkade-os/swap';
 import { ACTIVE_NETWORK } from '../../constants/network';
+import { cacheAssetInfo } from './assetInfo';
 import { getArkadeSession } from './client';
 
 /**
@@ -61,6 +62,31 @@ export type BtcUsdQuoteInfo = {
 export const swapsAvailable = (): boolean =>
   ACTIVE_NETWORK.name === 'mutinynet';
 
+/** ¿El ticker de un activo representa un dólar? (USDT, USDC, USDX…) */
+export function isUsdAssetTicker(ticker: string): boolean {
+  const value = ticker.trim().toUpperCase();
+  return value === 'USD' || value.startsWith('USD') || USD_TICKERS.has(value);
+}
+
+let primePromise: Promise<void> | null = null;
+
+/**
+ * Carga una vez los mercados para dejar cacheados ticker y decimales de los
+ * activos que aparecen en el saldo o el historial. Es best-effort: si falla se
+ * reintenta en la siguiente llamada.
+ */
+export function primeAssetMetadata(): Promise<void> {
+  if (!swapsAvailable()) return Promise.resolve();
+  if (primePromise) return primePromise;
+
+  primePromise = findBtcUsdMarkets()
+    .then(() => undefined)
+    .catch(() => {
+      primePromise = null;
+    });
+  return primePromise;
+}
+
 const tickerOf = (label: string): string =>
   label
     .replace(/[^a-zA-Z]/g, '')
@@ -99,6 +125,14 @@ export async function findBtcUsdMarkets(): Promise<BtcUsdMarket[]> {
 
     const usdTicker = usdTickerOf(market, usdIndex);
     if (!usdTicker) continue;
+
+    // Deja el activo descrito para el saldo y el historial: el registro publica
+    // ticker y decimales, así no dependemos de los metadatos del indexer.
+    cacheAssetInfo({
+      assetId: usdLeg.asset,
+      ticker: usdTicker,
+      decimals: usdLeg.decimals,
+    });
 
     found.push({
       market,

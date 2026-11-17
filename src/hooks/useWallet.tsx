@@ -228,6 +228,9 @@ const toBalanceView = (raw: WalletBalance): BalanceView => ({
   boarding: raw.boarding.total,
   boardingConfirmed: raw.boarding.confirmed,
   boardingUnconfirmed: raw.boarding.unconfirmed,
+  assets: raw.availableAssets
+    .filter(asset => asset.amount > 0n)
+    .map(asset => ({ assetId: asset.assetId, amount: asset.amount })),
 });
 
 const vtxoStatus = (vtxo: NormalizedExtendedVirtualCoin): CoinView['status'] => {

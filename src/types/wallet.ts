@@ -1,3 +1,9 @@
+export type BalanceAsset = {
+  /** Id de emisión del activo, en hex (sin prefijo CAIP). */
+  assetId: string;
+  amount: bigint;
+};
+
 export type BalanceView = {
   available: number;
   settled: number;
@@ -9,6 +15,8 @@ export type BalanceView = {
   boardingConfirmed: number;
   /** Depósitos onchain vistos en mempool, pendientes de confirmación. */
   boardingUnconfirmed: number;
+  /** Activos Arkade gastables junto al saldo BTC. */
+  assets: BalanceAsset[];
 };
 
 export type CoinStatus =

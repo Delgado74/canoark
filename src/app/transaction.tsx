@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
+import { useMemo } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
   Badge,
@@ -11,7 +12,11 @@ import {
   Title,
 } from '../components/ui';
 import { colors, spacing } from '../constants/theme';
+import { useAssetInfo } from '../hooks/useAssetInfo';
 import { usePreferences } from '../hooks/usePreferences';
+import { formatUnits } from '../lib/arkade/assets';
+import { bareAssetId, shortAssetId } from '../lib/arkade/assetInfo';
+import { formatSats } from '../lib/format';
 import {
   formatFullDate,
   tagLabel,
@@ -36,6 +41,7 @@ export default function TransactionDetailScreen() {
     arkTxid?: string;
     boardingTxid?: string;
     commitmentTxid?: string;
+    assets?: string;
   }>();
 
   const type = asString(params.type);
@@ -44,6 +50,40 @@ export default function TransactionDetailScreen() {
   const settled = asString(params.settled) === '1';
   const createdAt = Number(asString(params.createdAt)) || 0;
   const tag = asString(params.tag);
+
+  const rawAssets = asString(params.assets);
+  const assets = useMemo(() => {
+    if (!rawAssets) return [];
+    try {
+      const parsed: unknown = JSON.parse(rawAssets);
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .map(entry => {
+          if (!entry || typeof entry !== 'object') return null;
+          const { assetId, amount: rawAmount } = entry as {
+            assetId?: unknown;
+            amount?: unknown;
+          };
+          if (typeof assetId !== 'string' || typeof rawAmount !== 'string') {
+            return null;
+          }
+          try {
+            return { assetId, amount: BigInt(rawAmount) };
+          } catch {
+            return null;
+          }
+        })
+        .filter(
+          (entry): entry is { assetId: string; amount: bigint } =>
+            entry !== null
+        );
+    } catch {
+      return [];
+    }
+  }, [rawAssets]);
+
+  const assetInfos = useAssetInfo(assets.map(asset => asset.assetId));
+
   const txids = [
     { label: 'Arkade TXID', value: asString(params.arkTxid) },
     { label: 'Boarding TXID', value: asString(params.boardingTxid) },
@@ -82,6 +122,32 @@ export default function TransactionDetailScreen() {
         <Row label="Fecha" value={formatFullDate(createdAt)} />
         <Row label="Sentido" value={incoming ? 'Entrante' : 'Saliente'} />
       </Card>
+
+      {assets.length > 0 ? (
+        <Card title={incoming ? 'Activo recibido' : 'Activo enviado'}>
+          {assets.map(asset => {
+            const id = bareAssetId(asset.assetId);
+            const info = assetInfos[id];
+            const ticker = info?.ticker ?? shortAssetId(id);
+            const value = `${incoming ? '+' : '−'}${formatUnits(
+              asset.amount,
+              info?.decimals ?? 0
+            )} ${ticker}`;
+            return (
+              <Row
+                key={`${id}:${asset.amount.toString()}`}
+                label={info?.name ?? ticker}
+                value={value}
+              />
+            );
+          })}
+          <Text style={styles.note}>
+            Los {formatSats(Math.abs(amount))} sats de este movimiento son el
+            portador BTC del activo, no un cargo aparte: viajan en el mismo VTXO
+            y siguen en tu saldo disponible.
+          </Text>
+        </Card>
+      ) : null}
 
       <Card title="Identificadores">
         {txids.length === 0 ? (
@@ -155,5 +221,11 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 14,
     fontWeight: '600',
+  },
+  note: {
+    color: colors.textMuted,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: spacing.sm,
   },
 });

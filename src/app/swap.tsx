@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import type { Quote, Swap } from '@arkade-os/swap';
+import { ASSET_CARRIER_SATS } from '@arkade-os/swap/protocol';
 import {
   Badge,
   Button,
@@ -501,11 +502,26 @@ export default function SwapScreen() {
               <Row label="Mercado" value={result.pair} />
               <Row label="Entregado" value={result.give} />
               <Row label="Recibido" value={result.take} />
+              {success && direction === 'btc-to-usd' ? (
+                <Row
+                  label="Portador BTC"
+                  value={`${formatSats(Number(ASSET_CARRIER_SATS))} sats`}
+                />
+              ) : null}
             </>
           ) : null}
         </Card>
 
         <CopyField label="ID del swap" value={swap.id} />
+
+        {success && direction === 'btc-to-usd' ? (
+          <Notice tone="info">
+            El {market?.usdTicker ?? 'activo'} recibido viaja en un VTXO con{' '}
+            {formatSats(Number(ASSET_CARRIER_SATS))} sats de portador. Por eso el
+            historial muestra también un movimiento de esos sats: no es un cobro
+            aparte, siguen en tu saldo BTC.
+          </Notice>
+        ) : null}
 
         {!done ? (
           <Notice tone="info">
