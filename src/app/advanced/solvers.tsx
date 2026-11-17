@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Linking, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
 import type { Market, Swap } from '@arkade-os/swap';
+import { EsploraProvider } from '@arkade-os/sdk';
 import type { CorridorSwapRecord } from '@arkade-os/swap/advanced';
 import {
   Badge,
@@ -14,7 +15,11 @@ import {
 import { SettingsScreen } from '../../components/SettingsScreen';
 import { colors, spacing } from '../../constants/theme';
 import { useWallet } from '../../hooks/useWallet';
-import { getArkadeSession } from '../../lib/arkade/client';
+import {
+  getArkadeSession,
+  getOnchainClaimError,
+  retryOnchainClaim,
+} from '../../lib/arkade/client';
 import { isPendingSwapOutcome } from '../../lib/arkade/lightning';
 import { errorMessage, shorten } from '../../lib/format';
 
@@ -98,6 +103,7 @@ type OnchainProfile = {
   expectedAmount?: number;
   minConfirmations?: number;
   payoutPkScript?: string;
+  htlcLocktime?: number;
   funding?: { txid: string; vout: number; amount?: number };
   claimTxid?: string;
   claimFeeRateSatVb?: number;
@@ -122,6 +128,10 @@ const onchainProfile = (record: CorridorSwapRecord): OnchainProfile => {
       typeof profile.payoutPkScript === 'string'
         ? profile.payoutPkScript
         : undefined,
+    htlcLocktime:
+      typeof profile.htlcLocktime === 'number'
+        ? profile.htlcLocktime
+        : undefined,
     funding: funding && typeof funding.txid === 'string' ? funding : undefined,
     claimTxid:
       typeof profile.claimTxid === 'string' ? profile.claimTxid : undefined,
@@ -136,6 +146,16 @@ const onchainProfile = (record: CorridorSwapRecord): OnchainProfile => {
   };
 };
 
+/** Minutos que quedan hasta que abra la hoja de reembolso del solver. */
+const windowLabel = (locktime: number | undefined): string => {
+  if (locktime === undefined) return '—';
+  const remaining = Math.round(locktime - Date.now() / 1000);
+  if (remaining <= 0) return 'ventana cerrada';
+  const hours = Math.floor(remaining / 3600);
+  const minutes = Math.round((remaining % 3600) / 60);
+  return hours > 0 ? `${hours} h ${minutes} min` : `${minutes} min`;
+};
+
 const broadcastLabel = (seconds: number | undefined): string => {
   if (seconds === undefined) return '—';
   const date = new Date(seconds * 1000);
@@ -147,6 +167,7 @@ export default function SolversScreen() {
   const [markets, setMarkets] = useState<Market[]>([]);
   const [swaps, setSwaps] = useState<Swap[]>([]);
   const [records, setRecords] = useState<CorridorSwapRecord[]>([]);
+  const [htlcStatus, setHtlcStatus] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -165,27 +186,77 @@ export default function SolversScreen() {
       setSwaps(
         [...nextSwaps].sort((a, b) => Number(b.createdAt) - Number(a.createdAt))
       );
-      setRecords(
-        page.items
-          .filter(
-            (record): record is CorridorSwapRecord =>
-              record.family === 'rfq'
-          )
-          .sort((a, b) => b.updatedAt - a.updatedAt)
+      const corridor = page.items
+        .filter(
+          (record): record is CorridorSwapRecord => record.family === 'rfq'
+        )
+        .sort((a, b) => b.updatedAt - a.updatedAt);
+      setRecords(corridor);
+
+      // Confirmaciones reales del HTLC en L1: si el drive sigue en `pending` es
+      // la diferencia entre «aún no confirma» y «ya se puede reclamar».
+      const provider = new EsploraProvider(network.esploraUrl);
+      const entries = await Promise.all(
+        corridor
+          .filter(record => record.kind === 'onchain_send')
+          .slice(0, 5)
+          .map(async record => {
+            const detail = onchainProfile(record);
+            if (!detail.htlcAddress) return [record.rfqId, 'sin HTLC'] as const;
+            try {
+              const [coins, tip] = await Promise.all([
+                provider.getCoins(detail.htlcAddress),
+                provider.getChainTip(),
+              ]);
+              if (coins.length === 0) {
+                return [record.rfqId, 'sin UTXO en el HTLC'] as const;
+              }
+              const best = coins.reduce((a, b) => (b.value > a.value ? b : a));
+              const confirmations =
+                best.status.confirmed &&
+                typeof best.status.block_height === 'number'
+                  ? Math.max(0, tip.height - best.status.block_height + 1)
+                  : 0;
+              return [
+                record.rfqId,
+                `${coins.length} UTXO · ${confirmations} conf · ${best.value} sats`,
+              ] as const;
+            } catch (err) {
+              return [
+                record.rfqId,
+                `no se pudo leer Esplora: ${errorMessage(err)}`,
+              ] as const;
+            }
+          })
       );
+      setHtlcStatus(Object.fromEntries(entries));
     } catch (err) {
       setError(errorMessage(err));
       setMarkets([]);
       setSwaps([]);
       setRecords([]);
+      setHtlcStatus({});
     } finally {
       setLoading(false);
     }
-  }, [status]);
+  }, [status, network.esploraUrl]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  const retryClaim = (rfqId: string) => {
+    void (async () => {
+      try {
+        const { txid } = await retryOnchainClaim(rfqId);
+        Alert.alert('Claim emitido', txid);
+      } catch (err) {
+        Alert.alert('El claim falló', errorMessage(err));
+      } finally {
+        await load();
+      }
+    })();
+  };
 
   return (
     <SettingsScreen
@@ -271,6 +342,7 @@ export default function SolversScreen() {
             const detail =
               record.kind === 'onchain_send' ? onchainProfile(record) : null;
             const funding = detail?.funding;
+            const claimError = getOnchainClaimError(record.rfqId);
             return (
               <View key={record.id} style={styles.card}>
                 <View style={styles.cardHeader}>
@@ -289,6 +361,14 @@ export default function SolversScreen() {
                       Esperado {sats(detail.expectedAmount)} · Conf.{' '}
                       {detail.minConfirmations ?? '—'}
                     </Text>
+                    <Text style={styles.meta}>
+                      Ventana HTLC {windowLabel(detail.htlcLocktime)}
+                    </Text>
+                    {htlcStatus[record.rfqId] ? (
+                      <Text style={styles.meta}>
+                        HTLC en L1: {htlcStatus[record.rfqId]}
+                      </Text>
+                    ) : null}
                     <Text style={styles.source} numberOfLines={1}>
                       HTLC {detail.htlcAddress ?? '—'}
                     </Text>
@@ -326,10 +406,22 @@ export default function SolversScreen() {
                     Claim: {record.claimFailure}
                   </Text>
                 ) : null}
+                {claimError ? (
+                  <Text style={styles.failure}>
+                    Error del claim: {claimError}
+                  </Text>
+                ) : null}
                 {record.blockedReason ? (
                   <Text style={styles.failure}>
                     Bloqueado: {record.blockedReason}
                   </Text>
+                ) : null}
+                {record.kind === 'onchain_send' && !detail?.claimTxid ? (
+                  <Button
+                    title="Reintentar reclamo"
+                    variant="secondary"
+                    onPress={() => retryClaim(record.rfqId)}
+                  />
                 ) : null}
               </View>
             );
