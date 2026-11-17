@@ -9,6 +9,7 @@ export type FiatPrices = {
   gbp: number;
   cny: number;
   brl: number;
+  cup: number;
 };
 
 export const EMPTY_FIAT_PRICES: FiatPrices = {
@@ -19,6 +20,7 @@ export const EMPTY_FIAT_PRICES: FiatPrices = {
   gbp: 0,
   cny: 0,
   brl: 0,
+  cup: 0,
 };
 
 /** Mismos símbolos y decimales que Arkade Wallet. */
@@ -46,6 +48,7 @@ export async function fetchFiatPrices(): Promise<FiatPrices> {
     gbp: rates.gbp,
     cny: rates.cny,
     brl: rates.brl,
+    cup: rates.cup,
   };
 
   if (rates.usd > 0 || rates.eur > 0) {
@@ -68,6 +71,8 @@ export function priceFor(prices: FiatPrices, currency: FiatCurrency): number {
       return prices.cny;
     case 'BRL':
       return prices.brl;
+    case 'CUP':
+      return prices.cup;
     case 'USD':
       return prices.usd;
     default:

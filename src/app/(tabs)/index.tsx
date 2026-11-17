@@ -1,5 +1,6 @@
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   StyleSheet,
   Text,
@@ -156,13 +157,20 @@ export default function WalletScreen() {
           label="Recibir"
           onPress={() => router.push({ pathname: '/receive', params: { tab: 'arkade' } })}
         />
-        {network.name === 'mutinynet' ? (
-          <QuickAction
-            icon="⇄"
-            label="Swap"
-            onPress={() => router.push('/swap')}
-          />
-        ) : null}
+        <QuickAction
+          icon="⇄"
+          label="Swap"
+          onPress={() => {
+            if (network.name === 'mutinynet') {
+              router.push('/swap');
+              return;
+            }
+            Alert.alert(
+              'Swap BTC / USD',
+              'Estamos trabajando para llevarlo a mainnet. Pronto estará disponible; por ahora sólo funciona en Mutinynet.'
+            );
+          }}
+        />
         <QuickAction
           icon="↑"
           label="Enviar"

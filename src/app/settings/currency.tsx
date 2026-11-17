@@ -12,6 +12,7 @@ const LABELS: Record<FiatCurrency, { label: string; hint?: string }> = {
   BTC: { label: 'Bitcoin', hint: 'BTC' },
   CHF: { label: 'Franco suizo', hint: 'CHF' },
   CNY: { label: 'Yuan chino', hint: 'CNY' },
+  CUP: { label: 'Peso cubano', hint: 'CUP' },
   EUR: { label: 'Euro', hint: '€' },
   GBP: { label: 'Libra esterlina', hint: '£' },
   JPY: { label: 'Yen japonés', hint: '¥' },
