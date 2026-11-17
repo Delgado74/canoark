@@ -156,13 +156,13 @@ export default function WalletScreen() {
           label="Recibir"
           onPress={() => router.push({ pathname: '/receive', params: { tab: 'arkade' } })}
         />
-        <QuickAction
-          icon="⚡"
-          label="Lightning"
-          onPress={() =>
-            router.push({ pathname: '/receive', params: { tab: 'lightning' } })
-          }
-        />
+        {network.name === 'mutinynet' ? (
+          <QuickAction
+            icon="⇄"
+            label="Swap"
+            onPress={() => router.push('/swap')}
+          />
+        ) : null}
         <QuickAction
           icon="↑"
           label="Enviar"

@@ -1,4 +1,5 @@
 import type { FiatCurrency } from './preferences';
+import { fetchBtcRates } from './rates';
 
 export type FiatPrices = {
   eur: number;
@@ -28,43 +29,29 @@ const FIAT_SYMBOLS: Partial<Record<FiatCurrency, string>> = {
   JPY: '¥',
 };
 
-const PRICE_FEED_URL = 'https://blockchain.info/ticker';
-const PRICE_TTL_MS = 5 * 60 * 1000;
-
 let cachedPrices: FiatPrices | null = null;
-let cachedAt = 0;
 
 /**
- * Precios en la misma fuente que Arkade Wallet (blockchain.info/ticker).
- * No es crítico: si falla se mantiene el último valor conocido.
+ * Precios fiat a partir de la referencia de mercado (YADIO, con
+ * blockchain.info/ticker como respaldo). No es crítico: si ambas fuentes fallan
+ * se mantiene el último valor conocido.
  */
 export async function fetchFiatPrices(): Promise<FiatPrices> {
-  if (cachedPrices && Date.now() - cachedAt < PRICE_TTL_MS) {
-    return cachedPrices;
-  }
+  const rates = await fetchBtcRates();
+  const next: FiatPrices = {
+    eur: rates.eur,
+    usd: rates.usd,
+    chf: rates.chf,
+    jpy: rates.jpy,
+    gbp: rates.gbp,
+    cny: rates.cny,
+    brl: rates.brl,
+  };
 
-  try {
-    const response = await fetch(PRICE_FEED_URL);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const json = (await response.json()) as Record<
-      string,
-      { last?: number } | undefined
-    >;
-    const next: FiatPrices = {
-      eur: Number(json.EUR?.last ?? 0),
-      usd: Number(json.USD?.last ?? 0),
-      chf: Number(json.CHF?.last ?? 0),
-      jpy: Number(json.JPY?.last ?? 0),
-      gbp: Number(json.GBP?.last ?? 0),
-      cny: Number(json.CNY?.last ?? 0),
-      brl: Number(json.BRL?.last ?? 0),
-    };
+  if (rates.usd > 0 || rates.eur > 0) {
     cachedPrices = next;
-    cachedAt = Date.now();
-    return next;
-  } catch {
-    return cachedPrices ?? EMPTY_FIAT_PRICES;
   }
+  return cachedPrices ?? EMPTY_FIAT_PRICES;
 }
 
 export function priceFor(prices: FiatPrices, currency: FiatCurrency): number {

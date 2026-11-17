@@ -21,6 +21,7 @@ export default function RootLayout() {
           <Stack.Screen name="create" />
           <Stack.Screen name="restore" />
           <Stack.Screen name="send" />
+          <Stack.Screen name="swap" />
           <Stack.Screen name="receive" />
           <Stack.Screen name="transaction" />
           <Stack.Screen name="advanced" />
