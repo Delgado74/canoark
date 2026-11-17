@@ -39,7 +39,7 @@ export default function RestoreWalletScreen() {
   const [passphrase, setPassphrase] = useState('');
   const [passphraseConfirm, setPassphraseConfirm] = useState('');
   const [useBiometrics, setUseBiometrics] = useState(false);
-  const [walletMode, setWalletMode] = useState<WalletMode>('hd');
+  const [walletMode, setWalletMode] = useState<WalletMode>('static');
   const [localError, setLocalError] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
 
@@ -223,6 +223,7 @@ export default function RestoreWalletScreen() {
             biometricAvailable={biometricAvailable}
             walletMode={walletMode}
             onChangeWalletMode={setWalletMode}
+            allowWalletMode={false}
           />
           <Button
             title="Restaurar billetera"

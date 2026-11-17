@@ -49,7 +49,7 @@ export default function CreateWalletScreen() {
   const [passphrase, setPassphrase] = useState('');
   const [passphraseConfirm, setPassphraseConfirm] = useState('');
   const [useBiometrics, setUseBiometrics] = useState(false);
-  const [walletMode, setWalletMode] = useState<WalletMode>('hd');
+  const [walletMode, setWalletMode] = useState<WalletMode>('static');
   const [localError, setLocalError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
@@ -235,6 +235,7 @@ export default function CreateWalletScreen() {
             biometricAvailable={biometricAvailable}
             walletMode={walletMode}
             onChangeWalletMode={setWalletMode}
+            allowWalletMode={false}
           />
           <Button
             title="Crear billetera"
@@ -243,9 +244,8 @@ export default function CreateWalletScreen() {
             disabled={passphrase.length < MIN_PASSPHRASE_LENGTH}
           />
           <Paragraph muted>
-            Al crear la billetera se abre una sesión con el operador de{' '}
-            {walletMode === 'hd' ? 'Arkade' : 'Arkade'} y se prepara tu primera
-            dirección de recepción.
+            Al crear la billetera se abre una sesión con el operador de Arkade y
+            se prepara una dirección de recepción estática.
           </Paragraph>
         </>
       ) : null}

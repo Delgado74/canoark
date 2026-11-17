@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Linking, StyleSheet, Text, View } from 'react-native';
 import type { Market, Swap } from '@arkade-os/swap';
+import type { CorridorSwapRecord } from '@arkade-os/swap/advanced';
 import {
   Badge,
   Button,
@@ -91,10 +92,61 @@ const outcomeLabel = (outcome: string): string => {
 const sats = (amount: bigint | number | undefined): string =>
   amount === undefined ? '—' : `${Number(amount)} sats`;
 
+/** Campos que el corredor onchain escribe en `profile` al avanzar el drive. */
+type OnchainProfile = {
+  htlcAddress?: string;
+  expectedAmount?: number;
+  minConfirmations?: number;
+  payoutPkScript?: string;
+  funding?: { txid: string; vout: number; amount?: number };
+  claimTxid?: string;
+  claimFeeRateSatVb?: number;
+  claimBroadcastAt?: number;
+};
+
+const onchainProfile = (record: CorridorSwapRecord): OnchainProfile => {
+  const profile = record.profile as Record<string, unknown>;
+  const funding = profile.funding as OnchainProfile['funding'];
+  return {
+    htlcAddress:
+      typeof profile.htlcAddress === 'string' ? profile.htlcAddress : undefined,
+    expectedAmount:
+      typeof profile.expectedAmount === 'number'
+        ? profile.expectedAmount
+        : undefined,
+    minConfirmations:
+      typeof profile.minConfirmations === 'number'
+        ? profile.minConfirmations
+        : undefined,
+    payoutPkScript:
+      typeof profile.payoutPkScript === 'string'
+        ? profile.payoutPkScript
+        : undefined,
+    funding: funding && typeof funding.txid === 'string' ? funding : undefined,
+    claimTxid:
+      typeof profile.claimTxid === 'string' ? profile.claimTxid : undefined,
+    claimFeeRateSatVb:
+      typeof profile.claimFeeRateSatVb === 'number'
+        ? profile.claimFeeRateSatVb
+        : undefined,
+    claimBroadcastAt:
+      typeof profile.claimBroadcastAt === 'number'
+        ? profile.claimBroadcastAt
+        : undefined,
+  };
+};
+
+const broadcastLabel = (seconds: number | undefined): string => {
+  if (seconds === undefined) return '—';
+  const date = new Date(seconds * 1000);
+  return Number.isNaN(date.getTime()) ? String(seconds) : date.toLocaleString();
+};
+
 export default function SolversScreen() {
   const { status, network } = useWallet();
   const [markets, setMarkets] = useState<Market[]>([]);
   const [swaps, setSwaps] = useState<Swap[]>([]);
+  const [records, setRecords] = useState<CorridorSwapRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -103,19 +155,29 @@ export default function SolversScreen() {
     setLoading(true);
     setError(null);
     try {
-      const { swaps: client } = getArkadeSession();
-      const [nextMarkets, nextSwaps] = await Promise.all([
+      const { swaps: client, storage } = getArkadeSession();
+      const [nextMarkets, nextSwaps, page] = await Promise.all([
         client.markets(),
         client.swaps(),
+        storage.swapRepository.getSwapRecordsPage({ limit: 50 }),
       ]);
       setMarkets(nextMarkets);
       setSwaps(
         [...nextSwaps].sort((a, b) => Number(b.createdAt) - Number(a.createdAt))
       );
+      setRecords(
+        page.items
+          .filter(
+            (record): record is CorridorSwapRecord =>
+              record.family === 'rfq'
+          )
+          .sort((a, b) => b.updatedAt - a.updatedAt)
+      );
     } catch (err) {
       setError(errorMessage(err));
       setMarkets([]);
       setSwaps([]);
+      setRecords([]);
     } finally {
       setLoading(false);
     }
@@ -190,6 +252,83 @@ export default function SolversScreen() {
                   <Text style={styles.pending}>
                     Pendiente: el cliente sigue reclamando o reembolsando.
                     Mantén la app abierta.
+                  </Text>
+                ) : null}
+              </View>
+            );
+          })}
+        </View>
+      )}
+
+      <SectionLabel>Registros onchain (detalle del reclamo)</SectionLabel>
+      {records.length === 0 && !loading ? (
+        <Paragraph muted>
+          No hay registros de swap guardados en este dispositivo.
+        </Paragraph>
+      ) : (
+        <View style={styles.list}>
+          {records.map(record => {
+            const detail =
+              record.kind === 'onchain_send' ? onchainProfile(record) : null;
+            const funding = detail?.funding;
+            return (
+              <View key={record.id} style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Text style={styles.pair}>{record.kind}</Text>
+                  <Badge
+                    label={record.state}
+                    tone={outcomeTone(record.state)}
+                  />
+                </View>
+                <Text style={styles.source} numberOfLines={1}>
+                  RFQ {record.rfqId}
+                </Text>
+                {detail ? (
+                  <>
+                    <Text style={styles.meta}>
+                      Esperado {sats(detail.expectedAmount)} · Conf.{' '}
+                      {detail.minConfirmations ?? '—'}
+                    </Text>
+                    <Text style={styles.source} numberOfLines={1}>
+                      HTLC {detail.htlcAddress ?? '—'}
+                    </Text>
+                    <Text style={styles.meta}>
+                      Fondeo{' '}
+                      {funding
+                        ? `${shorten(funding.txid, 8, 8)}:${funding.vout}`
+                        : 'no visto'}{' '}
+                      {funding?.amount ? `(${funding.amount} sats)` : ''}
+                    </Text>
+                    <Text style={styles.meta}>
+                      Claim{' '}
+                      {detail.claimTxid
+                        ? shorten(detail.claimTxid, 8, 8)
+                        : 'no emitido'}{' '}
+                      {detail.claimFeeRateSatVb
+                        ? `· ${detail.claimFeeRateSatVb} sat/vB`
+                        : ''}
+                    </Text>
+                    <Text style={styles.meta}>
+                      Claim difundido {broadcastLabel(detail.claimBroadcastAt)}
+                    </Text>
+                  </>
+                ) : null}
+                {record.fundingTxid ? (
+                  <Text style={styles.source} numberOfLines={1}>
+                    Lockup {shorten(record.fundingTxid, 10, 10)}
+                  </Text>
+                ) : null}
+                {record.failure ? (
+                  <Text style={styles.failure}>Fallo: {record.failure}</Text>
+                ) : null}
+                {record.claimFailure ? (
+                  <Text style={styles.failure}>
+                    Claim: {record.claimFailure}
+                  </Text>
+                ) : null}
+                {record.blockedReason ? (
+                  <Text style={styles.failure}>
+                    Bloqueado: {record.blockedReason}
                   </Text>
                 ) : null}
               </View>

@@ -201,7 +201,7 @@ export function SecuritySetup({
   biometricAvailable,
   walletMode,
   onChangeWalletMode,
-  allowWalletMode = true,
+  allowWalletMode = false,
 }: {
   passphrase: string;
   confirm: string;

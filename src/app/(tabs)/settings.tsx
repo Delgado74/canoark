@@ -18,7 +18,6 @@ import {
 import { colors, spacing } from '../../constants/theme';
 import { useWallet } from '../../hooks/useWallet';
 import { usePreferences } from '../../hooks/usePreferences';
-import { ChoiceRow } from '../../components/SettingsScreen';
 import { walletModeLabel, type WalletMode } from '../../lib/arkade/walletMode';
 import { errorMessage } from '../../lib/format';
 
@@ -337,25 +336,17 @@ export default function SettingsScreen() {
           onToggle={() => toggle('addresses')}
         >
           <Paragraph muted>
-            El operador es el mismo; cambia cómo el SDK deriva tus direcciones de
-            recepción.
+            CanoArk usa una única dirección Arkade y una única de boarding, como
+            Arkade Wallet. Tus fondos no se mueven y la dirección antigua sigue
+            siendo válida.
           </Paragraph>
-          <ChoiceRow
-            label="Rotativas (HD)"
-            hint="Recomendado: una dirección nueva por recepción y vigilancia de las anteriores (BIP86)."
-            selected={walletMode === 'hd'}
-            onPress={() => changeWalletMode('hd')}
-          />
-          <ChoiceRow
-            label="Estática"
-            hint="Una sola dirección Arkade y una sola de boarding, como las instalaciones antiguas."
-            selected={walletMode === 'static'}
-            onPress={() => changeWalletMode('static')}
-          />
-          <Notice tone="info">
-            Las direcciones antiguas siguen en la ventana de vigilancia del SDK.
-            Si cambias de modo, el saldo no se mueve.
-          </Notice>
+          {walletMode === 'hd' ? (
+            <Button
+              title="Usar dirección estática"
+              variant="secondary"
+              onPress={() => changeWalletMode('static')}
+            />
+          ) : null}
         </SettingsItem>
 
         <SettingsItem
