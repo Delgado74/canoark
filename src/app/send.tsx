@@ -30,6 +30,12 @@ type Stage = 'form' | 'confirm' | 'success';
 
 type SendResult =
   | { kind: 'arkade'; txid: string }
+  | {
+      kind: 'onchain';
+      txid: string;
+      feeSats: number;
+      changeSats: number;
+    }
   | { kind: 'swap'; id: string; outcome: string; amountSats: number };
 
 function outcomeLabel(outcome: string): string {
@@ -180,6 +186,14 @@ export default function SendScreen() {
       } else if (outcome.kind === 'arkade') {
         setResult({ kind: 'arkade', txid: outcome.txid });
         setStage('success');
+      } else if (outcome.kind === 'onchain') {
+        setResult({
+          kind: 'onchain',
+          txid: outcome.txid,
+          feeSats: outcome.feeSats,
+          changeSats: outcome.changeSats,
+        });
+        setStage('success');
       } else {
         const swapId = outcome.swap.id;
         setResult({
@@ -260,7 +274,9 @@ export default function SendScreen() {
                 : isSuccess(result.outcome)
                   ? 'Pago enviado'
                   : 'Pago en curso'
-              : 'Pago Arkade enviado'}
+              : result.kind === 'onchain'
+                ? 'Salida onchain enviada'
+                : 'Pago Arkade enviado'}
           </Title>
           <Text style={styles.successAmount}>
             {result.kind === 'swap'
@@ -272,7 +288,9 @@ export default function SendScreen() {
           <Text style={styles.successText}>
             {result.kind === 'swap'
               ? outcomeLabel(result.outcome)
-              : 'La transacción se envió al operador. El saldo se actualizará en unos segundos.'}
+              : result.kind === 'onchain'
+                ? 'El operador incluyó la salida en una ronda de settlement. El destinatario recibe el pago en la commitment transaction.'
+                : 'La transacción se envió al operador. El saldo se actualizará en unos segundos.'}
           </Text>
         </View>
 
@@ -281,6 +299,13 @@ export default function SendScreen() {
         ) : (
           <CopyField label="TXID" value={result.txid} />
         )}
+
+        {result.kind === 'onchain' ? (
+          <Row
+            label="Comisión de la salida"
+            value={`${formatSats(result.feeSats)} sats`}
+          />
+        ) : null}
 
         {pending ? (
           <Notice tone="warning">
@@ -356,7 +381,11 @@ export default function SendScreen() {
             }
           />
           <Row
-            label="Comisión máxima"
+            label={
+              kind === 'onchain'
+                ? 'Comisión máxima de la salida'
+                : 'Comisión máxima'
+            }
             value={
               isArkade
                 ? 'La cobra el operador'
@@ -378,8 +407,10 @@ export default function SendScreen() {
         ) : null}
         {kind === 'onchain' ? (
           <Notice tone="warning">
-            Un envío onchain tarda en confirmar. La ventana del swap debe seguir
-            abierta hasta que el solver complete el pago.
+            El pago se hace con una salida colaborativa: el operador incluye tus
+            VTXOs en una ronda de settlement y la commitment transaction paga la
+            dirección de destino. No hay solver ni swap; mantén la app abierta
+            hasta que la ronda cierre.
           </Notice>
         ) : null}
         {kind === 'arkade' ? (
@@ -486,12 +517,20 @@ export default function SendScreen() {
 
         {!isArkade ? (
           <Field
-            label="Comisión máxima del solver (sats)"
+            label={
+              kind === 'onchain'
+                ? 'Comisión máxima de la salida (sats)'
+                : 'Comisión máxima del solver (sats)'
+            }
             value={maxFee}
             onChangeText={setMaxFee}
             placeholder="500"
             keyboardType="number-pad"
-            hint="Se rechaza el pago antes de mover fondos si el solver pide más."
+            hint={
+              kind === 'onchain'
+                ? 'Se rechaza antes de firmar si la ronda del operador cuesta más.'
+                : 'Se rechaza el pago antes de mover fondos si el solver pide más.'
+            }
           />
         ) : null}
 

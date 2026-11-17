@@ -66,9 +66,9 @@ const feeCeiling = (maxFeeSats: number) => ({
 });
 
 /**
- * Envía a una factura BOLT11 o a una dirección onchain. El usuario bloquea BTC
- * dentro de Arkade y el solver paga el destino. Si el solver no paga, el lockup
- * se reembolsa solo tras `refundLocktime`.
+ * Paga una factura BOLT11 con el solver. Los envíos onchain **no** pasan por
+ * aquí: se resuelven con una salida colaborativa (`wallet.settle`), que paga la
+ * dirección de destino sin swap ni HTLC.
  */
 export async function payThroughSolver(
   destination: string,
@@ -76,20 +76,17 @@ export async function payThroughSolver(
   maxFeeSats = 500
 ): Promise<PayResult> {
   const { swaps } = getArkadeSession();
-  const invoice = isLightningInvoice(destination);
-  const onchain = isOnchainAddress(destination);
 
-  if (!invoice && !onchain) {
+  if (!isLightningInvoice(destination)) {
     throw new Error(
-      'Destino no soportado por el solver. Usa una factura Lightning, una dirección onchain o una dirección Arkade.'
+      'El solver sólo paga facturas Lightning. Para enviar onchain usa una dirección Bitcoin (la salida colaborativa).'
     );
   }
-  if (onchain && amountSats <= 0) {
-    throw new Error('Indica cuántos sats quieres enviar onchain.');
+  if (amountSats <= 0) {
+    throw new Error('Indica cuántos sats quieres pagar.');
   }
 
   return swaps.pay(destination.trim(), {
-    ...(onchain ? { amount: BigInt(Math.floor(amountSats)) } : {}),
     maxFee: feeCeiling(maxFeeSats),
   });
 }

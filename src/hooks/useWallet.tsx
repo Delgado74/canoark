@@ -43,10 +43,12 @@ import {
   forgetLnurlSecrets,
   hasPendingSwaps,
   isArkadeAddress,
+  isOnchainAddress,
   payThroughSolver,
   receiveLightning,
   watchSwap,
 } from '../lib/arkade/lightning';
+import { sendCollaborativeExit } from '../lib/arkade/offboard';
 import { wipeStorageDatabases } from '../lib/storage/sqlite';
 import {
   clearWalletMode,
@@ -60,6 +62,12 @@ export type WalletStatus = 'loading' | 'empty' | 'locked' | 'unlocked';
 
 export type SendOutcome =
   | { kind: 'arkade'; txid: string }
+  | {
+      kind: 'onchain';
+      txid: string;
+      feeSats: number;
+      changeSats: number;
+    }
   | PayResult;
 
 type WalletContextValue = {
@@ -587,6 +595,20 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         });
         await refresh();
         return { kind: 'arkade' as const, txid };
+      }
+
+      // Onchain puro: salida colaborativa, igual que Arkade Wallet. Se gasta un
+      // VTXO propio en una ronda del operador y el pago sale en la commitment
+      // transaction; no hay swap, HTLC ni claim que pueda quedarse colgado.
+      if (isOnchainAddress(target)) {
+        const { txid, feeSats, changeSats } = await sendCollaborativeExit(
+          session.wallet,
+          target,
+          Math.floor(amountSats),
+          maxFeeSats
+        );
+        await refresh();
+        return { kind: 'onchain' as const, txid, feeSats, changeSats };
       }
 
       const result = await payThroughSolver(target, amountSats, maxFeeSats);
