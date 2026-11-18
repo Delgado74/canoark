@@ -1,69 +1,58 @@
 # CanoArk
 
-Billetera Android de [Arkade](https://docs.arkadeos.com) construida con Expo,
-React Native y el SDK oficial `@arkade-os/sdk`. La app permite:
+Billetera Android de [Arkade](https://docs.arkadeos.com) con Expo, React Native y `@arkade-os/sdk`.
 
-- Recibir y enviar pagos instantáneos dentro de Arkade.
-- Pagar facturas Lightning y direcciones Bitcoin onchain mediante solvers.
-- Recibir Lightning con facturas BOLT11 y con una Lightning Address (LNURL).
-- Guardar la mnemónica cifrada por Android Keystore y persistir el estado de la
-  billetera en SQLite.
+- Pagos instantáneos dentro de Arkade.
+- Pagos Lightning (BOLT11) y onchain vía solvers.
+- Recepción Lightning con factura o Lightning Address (LNURL).
+- Mnemónica cifrada con Android Keystore; estado en SQLite.
+- Sin EAS Build: APK local con Gradle o GitHub Actions.
 
-No usa EAS Build. El APK se compila en local con Gradle o en GitHub Actions.
+## Qué leer según la tarea
+
+| Tarea | Archivo |
+| --- | --- |
+| Contexto y decisiones del proyecto (versiones, gotchas, flujos) | [`AGENTS.md`](AGENTS.md) |
+| APIs, términos y redes de Arkade | skill de Arkade + MCP `arkade-docs` |
+| Compilar, firmar, CI, troubleshooting | [`AGENTS.md`](AGENTS.md#build-local-sin-eas) |
+
+Si hay conflicto: doc oficial de Arkade gana para APIs; `AGENTS.md` gana para decisiones del proyecto.
 
 ## Requisitos
 
 - Node.js 22
 - JDK 17
-- Android SDK con `ANDROID_HOME` configurado
-- Un dispositivo o emulador Android
+- Android SDK con `ANDROID_HOME`
+- Dispositivo o emulador Android
 
 ## Puesta en marcha
 
 ```bash
 npm install
-cp .env.example .env.local   # elige red y, si aplica, servidor LNURL
+cp .env.example .env.local   # red y, si aplica, servidor LNURL
 npx expo prebuild --platform android --clean
 npx expo run:android
 ```
 
-`npm install` instala también las dependencias nativas. Si cambias algo del
-directorio `android/` generado, recuerda que `prebuild --clean` lo recrea.
+`prebuild --clean` recrea `android/`. Si editas código nativo, guárdalo en un config plugin o script.
 
-## Compilar un APK release
+## APK release
 
 ```bash
 npm run android:release
 ```
 
-El APK queda en:
+Salida: `android/app/build/outputs/apk/release/app-release.apk`.
 
-```text
-android/app/build/outputs/apk/release/app-release.apk
-```
-
-Sin un keystore de release configurado, Gradle firma con el keystore de debug
-del SDK. Ese APK sirve para probar, pero no para publicar. Para firmar de
-verdad, consulta [GUIA.md](GUIA.md#firma-del-apk) o usa los secretos de GitHub
-Actions.
+Sin keystore de release, Gradle firma con el de debug (instalable, no publicable). Firma real: ver [`AGENTS.md`](AGENTS.md#firma-apk) o los secretos de GitHub Actions.
 
 ## GitHub Actions
 
-El workflow `.github/workflows/build-apk.yml` compila el APK en cada push a
-`main`, en tags `v*` o al lanzarlo a mano desde la pestaña Actions. El artifact
-se descarga desde la ejecución.
+`.github/workflows/build-apk.yml` compila en push a `main`, tags `v*` o manualmente. Artifact descargable desde la ejecución.
 
-Es la vía recomendada si tu red tiene geobloqueos: GitHub aloja los runners y
-evita los 403/timeouts de `services.gradle.org` o de repositorios Maven.
+Recomendado si tu red tiene geobloqueos: evita 403/timeouts de `services.gradle.org` y Maven.
 
-Secretos opcionales para firma release:
-
-| Secreto | Contenido |
-| --- | --- |
-| `ANDROID_KEYSTORE_BASE64` | keystore `.jks` codificado en base64 |
-| `ANDROID_KEYSTORE_PASSWORD` | contraseña del keystore |
-| `ANDROID_KEY_ALIAS` | alias de la clave |
-| `ANDROID_KEY_PASSWORD` | contraseña de la clave |
+Secretos opcionales de firma: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
 
 ## Variables de entorno
 
@@ -88,8 +77,4 @@ src/constants/           Red y tema
 
 ## Aviso
 
-CanoArk es software experimental. Mutinynet usa bitcoin de prueba. En mainnet,
-verifica siempre direcciones, importes y comisiones antes de firmar. La frase de
-recuperación es la única forma de restaurar la billetera.
-
-La guía técnica detallada está en [GUIA.md](GUIA.md).
+Software experimental. Mutinynet usa bitcoin de prueba. En mainnet, verifica direcciones, importes y comisiones antes de firmar. La frase de recuperación es la única forma de restaurar la billetera.

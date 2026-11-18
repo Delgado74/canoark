@@ -1,0 +1,115 @@
+# CanoArk
+
+Fuentes: APIs/términos Arkade → skill + MCP `arkade-docs`. Este archivo → decisiones del proyecto. Conflicto de API: gana doc oficial. Conflicto de decisión: gana este archivo.
+
+## Versiones (no cambiar sin verificar peer)
+- Expo 58 (`expo@~58.0.24`), RN 0.88.1, React 19.3.0
+- `@arkade-os/sdk` 0.5.5, `@arkade-os/swap` 0.1.5, `@arkade-os/lnurl-client` 0.9.2
+- `nostr-tools` **exacto `2.24.1`** (peer exacto de swap). No `^2.26.0`. No `--legacy-peer-deps`.
+- Node 22, JDK 17
+
+## Red (inlineada al compilar; no runtime)
+`EXPO_PUBLIC_ARKADE_NETWORK` = `mutinynet` | `mainnet`
+
+| red | operator/indexer | prefix | swapNetwork |
+|---|---|---|---|
+| mutinynet | `https://mutinynet.arkade.sh` | `tark1` | `mutinynet` |
+| mainnet | `https://arkade.computer` | `ark1` | `bitcoin` |
+
+- `src/constants/network.ts` centraliza urls, prefix, swapNetwork, vtxoThresholdSeconds. No duplicar.
+- Mnemónica: `MnemonicIdentity.fromMnemonic(m, { isMainnet: ACTIVE_NETWORK.isMainnet })`.
+
+## Expo/RN
+- Usar `ExpoOperatorProvider` + `ExpoIndexerProvider` (`@arkade-os/sdk/adapters/expo`).
+- **Obsoleto:** `ExpoArkProvider`, `arkProvider`. Migrar a `ExpoOperatorProvider`/`operatorProvider`.
+- `index.js` debe polyfillear `crypto.getRandomValues` con `require` (no `import`) antes de `expo-router/entry`. `package.json`: `"main": "index.js"`.
+
+## Mnemónica (no tocar sin migración + test de restore)
+- 12 palabras (`@scure/bip39`), passphrase obligatoria ≥8, nunca en claro.
+- Cifrado: PBKDF2-HMAC-SHA256 210000 iter, salt 16B + XChaCha20-Poly1305.
+- Blob `{v,kdf,iter,salt,nonce,ciphertext}` en `expo-secure-store` `WHEN_UNLOCKED_THIS_DEVICE_ONLY`.
+- Biometría opcional solo comodidad: passphrase en clave aparte con `requireAuthentication:true` si `canUseBiometricAuthentication()` (BIOMETRIC_STRONG/Class3).
+- Android 10: `canUseBiometricAuthentication()` = false → no ofrecer biometría (evita `Biometric authentication status is unknown`).
+- Marcador `canoark.hasWallet.v1` (no dispara prompt biométrico al arrancar).
+- Migrar `canoark.mnemonic.v1` → esquema cifrado en primer unlock con passphrase.
+- Huellas invalidadas → avisar, desbloquear con passphrase, no perder wallet.
+- Bloqueo a 2 min en background (`AppState`): cierra sesión SDK + borra mnemónica de memoria.
+
+## SQLite
+- `src/lib/storage/sqlite.ts` adapta `expo-sqlite` a `SQLExecutor` (`run`/`get`/`all`).
+- `canoark-wallet.db`: `SQLiteWalletRepository`, `SQLiteContractRepository`, `SQLiteIntentRepository`.
+- `canoark-swaps.db`: `SQLiteAssetSwapRepository`.
+- **Un executor por archivo durante todo el proceso.** Dos executors = escrituras intercaladas.
+- `wipeStorageDatabases()`: cerrar conexiones + `SQLite.deleteDatabaseAsync()`. Ejecutar tras cerrar sesión SDK.
+
+## Pagos
+- Arkade: `wallet.send({ recipients:[{address, amount:sats}] })`. Instantáneo, sin solver.
+- Lightning/onchain: `swaps.pay(dest, { amount: BigInt(sats) /*solo onchain*/, maxFee:{amount:BigInt(max), asset:btcOn('arkade', swapNetwork)} })`.
+- `pay()` → `{kind:'swap',swap}` | `{kind:'payment',txid}`.
+- `SwapUpdate.outcome`: accepted|funding|funded|open|paid|claimed|refunded|lapsed|failed|needs_recovery.
+- Mantener cliente swaps vivo + `onUpdate()` para claim/refund/estado. Sin pago del solver → refund al vencer `refundLocktime`.
+
+## Recibir Lightning
+- `swaps.receive({via:'lightning', amount:BigInt(sats)})` → `request.artifact.kind==='invoice'` → `.bolt11`.
+- App abierta hasta `claimed`|`lapsed`; cerrar detiene el cliente que reclama.
+- LNURL-pay (importe exacto): `receive()` no sirve (pide de más). Usar `quote({via:'lightning',amount,amountOn:'give'})` → validar `quote.fee.amount <= maxFee` → `swaps.accept(quote)`. `accept()` no aplica techo de comisión.
+
+## Lightning Address
+- Env: `EXPO_PUBLIC_LNURL_BASE_URL`, `EXPO_PUBLIC_LNURL_DOMAIN`.
+- Token con **ECDSA** (no Schnorr; Schnorr aleatorio → token distinto cada arranque): `deriveSessionTokenWithSigner((m,t)=>wallet.identity.signMessage(m,t), domain)`.
+- `registerAddress({token,username,domain})`; `registerArkadeIdentity({token,handle,domain,arkadeAddress,claimPublicKey,boardingAddress})`. `claimPublicKey` = pubkey comprimida 33B hex.
+- `openSession({token}, handlers)` SSE; responder `invoice_request` con factura del solver.
+- Al claim: preimagen vía `preimageForSwapRecord(wallet, projection)` desde `profile.hashlock`, verificar contra `paymentHash`, `session.reportSettled(preimage)`. Best-effort; si falla, pago offline por dirección Arkade.
+- SSE solo foreground. App cerrada → servidor LNURL usa dirección Arkade registrada.
+
+## Renovación
+- `settlementConfig.vtxoThreshold` = 259200 s (3 días).
+- `ExpoWallet.setup` sincroniza al arrancar pero **NO renueva**. Renovación solo con app abierta + gestor settlement activo.
+- Al volver de background: sincronizar + dejar app abierta unos segundos.
+- Bloqueo 2 min cierra sesión y detiene renovación (trade-off seguridad/desatendido).
+
+## Build local (sin EAS)
+npm install
+cp .env.example .env.local
+npx expo prebuild --platform android --clean
+npx expo run:android
+
+- Release: `npm run android:release` → `android/app/build/outputs/apk/release/app-release.apk`.
+- `android/` en `.gitignore`, se regenera con prebuild. Cambios nativos → config plugin/script, no solo `android/`.
+
+## Firma APK
+- Sin keystore propio → firma debug (instalable, no publicable).
+- `keytool -genkeypair -v -keystore canoark-release.jks -alias canoark -keyalg RSA -keysize 2048 -validity 10000`
+- Env: `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
+- `scripts/configure-android-signing.mjs` acepta `ANDROID_KEYSTORE_BASE64`, escribe `release.keystore`, idempotente.
+- Nunca subir `.jks`, contraseñas ni `android/` generado.
+
+## CI
+`.github/workflows/build-apk.yml`: Node22+JDK17+AndroidSDK → `npm ci` → `npx expo prebuild --platform android --clean --no-install` → firma si secretos → `./gradlew assembleRelease --no-daemon` → artifact `app-release.apk`. Sin EAS.
+- Vars repo: `ARKADE_NETWORK`, `LNURL_BASE_URL`, `LNURL_DOMAIN`.
+- Secretos firma: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
+
+## Troubleshooting
+| síntoma | acción |
+|---|---|
+| Gradle timeout/403 | No insistir local; usar GitHub Actions. Opcional: `sed -i 's/networkTimeout=10000/networkTimeout=120000/' android/gradle/wrapper/gradle-wrapper.properties` |
+| `ERESOLVE` nostr-tools | Fijar `"nostr-tools":"2.24.1"`. No `--legacy-peer-deps`. |
+| `crypto.getRandomValues is not a function` | `"main":"index.js"` + polyfill con `require`. |
+| No conecta al operador | Verificar red compilada + internet. Mutinynet puede caer. Endpoints inlineados. |
+| Biometría falla tras cambiar huellas | Desbloquear con passphrase; reactivar recreando bóveda o reimportando frase. |
+| Sin opción biometría (Xiaomi/Android10) | Esperado (BIOMETRIC_STRONG/Class3). Passphrase único método. |
+| Recepción Lightning pendiente | Reabrir app: cliente swaps restaura registros; sincronizar + esperar. |
+| Lightning Address no emite facturas | Sin SSE activa. Mantener Recibir abierta o usar dirección Arkade offline. |
+
+## Pantallas
+- `welcome` (nueva/restaurar), `create` (seed+confirm+biometría+passphrase), `restore`, `unlock` (passphrase+biometría).
+- Tabs: Billetera (saldo, Recibir/Enviar), Historial (`wallet.getTransactionHistory()`), Configuración (General/Seguridad/Avanzado, filas expandibles).
+- Stack: `receive` (tabs Arkade/Lightning/Onchain, QR, Copiar/Compartir/Añadir fondos), `send`.
+
+## Refs
+- <https://docs.arkadeos.com/llms.txt>
+- <https://docs.arkadeos.com/wallets/advanced/expo-react-native>
+- <https://docs.arkadeos.com/wallets/advanced/lightning-services>
+- <https://docs.arkadeos.com/intents/build/lightning>
+
+PWA `arkade-os/wallet` solo referencia de flujos UX; no copiar código. Usar APIs actuales del SDK/swap/LNURL.
