@@ -109,7 +109,8 @@ export default function SendScreen() {
       ? parsed.amountSats
       : satsFromInput(amount);
   const feeSats = satsFromInput(maxFee);
-  const needsAmount = kind === 'onchain' || kind === 'arkade';
+  const needsAmount =
+    kind === 'onchain' || kind === 'arkade' || kind === 'lnurl';
   const isArkade = kind === 'arkade';
 
   const fillFromParsed = (value: string) => {
@@ -134,16 +135,13 @@ export default function SendScreen() {
 
   const validate = (): string | null => {
     if (kind === 'unknown') {
-      if (parsed.lnurl) {
-        return 'Las Lightning Address (usuario@dominio) todavía no se pueden pagar directamente desde CanoArk. Pide una factura BOLT11 o usa una dirección Arkade.';
-      }
       const hrp = arkadeAddressHrp(parsed.raw || destination);
       if (hrp) {
         return `Esa dirección Arkade es de ${
           hrp === 'ark' ? 'Bitcoin mainnet' : 'otra red de pruebas'
         }. CanoArk está conectado a ${network.label}: usa una dirección ${network.addressPrefix}….`;
       }
-      return 'Destino no reconocido. Usa una factura Lightning (lnbc…), una dirección onchain (bc1… / tb1…) o una dirección Arkade (ark1… / tark1…). También puedes pegar un BIP21.';
+      return 'Destino no reconocido. Usa una factura Lightning (lnbc…), una dirección onchain (bc1… / tb1…), una dirección Arkade (ark1… / tark1…) o una Lightning Address (usuario@dominio). También puedes pegar un BIP21.';
     }
     if (needsAmount && amountSats <= 0) {
       return 'Indica cuántos sats quieres enviar.';
@@ -461,7 +459,7 @@ export default function SendScreen() {
           label="Destino"
           value={destination}
           onChangeText={fillFromParsed}
-          placeholder="lnbc… / bc1… / tb1… / tark1… / bitcoin:…"
+          placeholder="lnbc… / bc1… / tb1… / tark1… / usuario@dominio"
           autoCapitalize="none"
           autoCorrect={false}
           multiline
@@ -470,11 +468,7 @@ export default function SendScreen() {
         <View style={styles.metaRow}>
           {destination.trim() ? (
             <Badge
-              label={
-                parsed.lnurl && kind === 'unknown'
-                  ? 'Lightning Address'
-                  : destinationKindLabel(kind)
-              }
+              label={destinationKindLabel(kind)}
               tone={kind === 'unknown' ? 'danger' : 'success'}
             />
           ) : (
@@ -499,11 +493,13 @@ export default function SendScreen() {
                     parsed.amountSats
                   )} sats.`
                 : 'La factura ya incluye el importe; este campo se ignora.'
-              : parsed.amountSats
-                ? `Importe detectado en el BIP21: ${formatSats(
-                    parsed.amountSats
-                  )} sats.`
-                : 'Obligatorio para direcciones onchain y Arkade.'
+              : kind === 'lnurl'
+                ? 'Obligatorio: se pedirá una factura a la dirección por este importe.'
+                : parsed.amountSats
+                  ? `Importe detectado en el BIP21: ${formatSats(
+                      parsed.amountSats
+                    )} sats.`
+                  : 'Obligatorio para direcciones onchain y Arkade.'
           }
         />
 
@@ -531,7 +527,8 @@ export default function SendScreen() {
 
       <Paragraph muted>
         Dirección Arkade: {network.addressPrefix}… · onchain:{' '}
-        {network.isMainnet ? 'bc1…' : 'tb1…'} · Lightning: lnbc…
+        {network.isMainnet ? 'bc1…' : 'tb1…'} · Lightning: lnbc… o
+        usuario@dominio
       </Paragraph>
       <Notice tone="warning">
         Verifica la red antes de enviar. Una dirección de otra red será
