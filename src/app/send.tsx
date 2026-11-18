@@ -129,8 +129,14 @@ export default function SendScreen() {
       ? parsed.amountSats
       : satsFromInput(amount);
   const feeSats = satsFromInput(maxFee);
+  const invoiceHasAmount =
+    kind === 'lightning' &&
+    Boolean(parsed.amountSats && parsed.amountSats > 0);
   const needsAmount =
-    kind === 'onchain' || kind === 'arkade' || kind === 'lnurl';
+    kind === 'onchain' ||
+    kind === 'arkade' ||
+    kind === 'lnurl' ||
+    (kind === 'lightning' && !invoiceHasAmount);
   const isArkade = kind === 'arkade';
   const assetAmountText =
     assetAmountAtomic !== null
@@ -440,9 +446,11 @@ export default function SendScreen() {
               assetMode
                 ? assetAmountText || `— ${assetTicker}`
                 : kind === 'lightning'
-                  ? parsed.amountSats
-                    ? `${formatSats(parsed.amountSats)} sats (BIP21)`
-                    : 'Según factura'
+                  ? invoiceHasAmount
+                    ? `${formatSats(parsed.amountSats ?? 0)} sats`
+                    : amountSats > 0
+                      ? `${formatSats(amountSats)} sats`
+                      : 'Sin importe en la factura'
                   : `${formatSats(amountSats)} sats`
             }
           />
@@ -595,7 +603,7 @@ export default function SendScreen() {
           onChangeText={setAmount}
           placeholder="0"
           keyboardType={assetMode ? 'decimal-pad' : 'number-pad'}
-          editable={kind !== 'lightning'}
+          editable={kind !== 'lightning' || !invoiceHasAmount}
           hint={
             assetMode
               ? assetDecimals > 0
@@ -608,11 +616,11 @@ export default function SendScreen() {
                     assetDecimals
                   )} ${assetTicker}.`
               : kind === 'lightning'
-                ? parsed.amountSats
-                  ? `La factura/BIP21 ya incluye ${formatSats(
-                      parsed.amountSats
-                    )} sats.`
-                  : 'La factura ya incluye el importe; este campo se ignora.'
+                ? invoiceHasAmount
+                  ? `La factura ya incluye ${formatSats(
+                      parsed.amountSats ?? 0
+                    )} sats; este campo se rellena solo.`
+                  : 'La factura no lleva importe: indica cuántos sats pagar.'
                 : kind === 'lnurl'
                   ? 'Obligatorio: se pedirá una factura a la dirección por este importe.'
                   : parsed.amountSats

@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import { decode as decodeBolt11 } from 'light-bolt11-decoder';
 import { ArkAddress, isValidArkAddress } from '@arkade-os/sdk';
 import {
   btcOn,
@@ -30,6 +31,33 @@ export function isLightningInvoice(value: string): boolean {
   // lnurl1… es un enlace LNURL, no una factura BOLT11. Se rechaza aquí para
   // que el solver no reciba un destino que no sabe interpretar.
   return /^ln(?!url)[a-z0-9]+1/i.test(value.trim());
+}
+
+/** Milisats del HRP (`lnbc2500u1…`) o `undefined` si la factura no lleva importe. */
+const amountSectionSats = (sections: { name: string; value?: unknown }[]) => {
+  const each = sections.find(section => section.name === 'amount');
+  const millisats = each?.value;
+  if (typeof millisats !== 'string' || !/^\d+$/.test(millisats)) return undefined;
+  const sats = Number(BigInt(millisats) / 1000n);
+  return sats > 0 ? sats : undefined;
+};
+
+/**
+ * Importe que lleva dentro una factura BOLT11. Sin esto, quien paga una
+ * factura generada en CanoArk veía el campo de importe vacío y tenía que
+ * escribirlo a mano, aunque la factura ya lo fijaba.
+ *
+ * Las facturas sin importe ("amountless") devuelven `undefined`: ese es el caso
+ * en el que sí hay que preguntarlo.
+ */
+export function invoiceAmountSats(value: string): number | undefined {
+  const invoice = value.trim().replace(/^lightning:/i, '');
+  if (!isLightningInvoice(invoice)) return undefined;
+  try {
+    return amountSectionSats(decodeBolt11(invoice).sections);
+  } catch {
+    return undefined;
+  }
 }
 
 export function isOnchainAddress(value: string): boolean {
@@ -91,11 +119,17 @@ export async function payThroughSolver(
       'El solver sólo paga facturas Lightning. Para enviar onchain usa una dirección Bitcoin (la salida colaborativa).'
     );
   }
-  if (amountSats <= 0) {
-    throw new Error('Indica cuántos sats quieres pagar.');
+
+  // Con importe en la factura, el solver toma el importe de ahí y pasar otro
+  // sería `AmountMismatch`. Sólo las facturas sin importe necesitan que se lo
+  // indiquemos nosotros.
+  const amountless = invoiceAmountSats(invoice) === undefined;
+  if (amountless && amountSats <= 0) {
+    throw new Error('La factura no incluye importe: indica cuántos sats pagar.');
   }
 
   return swaps.pay(invoice, {
+    ...(amountless ? { amount: BigInt(Math.floor(amountSats)) } : {}),
     maxFee: feeCeiling(maxFeeSats),
   });
 }

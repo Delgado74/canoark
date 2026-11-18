@@ -1,5 +1,10 @@
 import { BIP21 } from '@arkade-os/sdk';
-import { isArkadeAddress, isLightningInvoice, isOnchainAddress } from './arkade/lightning';
+import {
+  invoiceAmountSats,
+  isArkadeAddress,
+  isLightningInvoice,
+  isOnchainAddress,
+} from './arkade/lightning';
 import { isLightningAddress } from './arkade/lnurl-pay';
 
 export type ParsedDestinationKind =
@@ -54,7 +59,7 @@ export function parseDestination(input: string): ParsedDestination {
         return {
           raw: lightning,
           kind: isLightningInvoice(lightning) ? 'lightning' : 'unknown',
-          amountSats,
+          amountSats: amountSats ?? invoiceAmountSats(lightning),
         };
       }
       if (address && isOnchainAddress(address)) {
@@ -68,7 +73,13 @@ export function parseDestination(input: string): ParsedDestination {
 
   const withoutLightning = stripScheme(value, 'lightning:');
   if (isLightningInvoice(withoutLightning)) {
-    return { raw: withoutLightning, kind: 'lightning' };
+    // El importe viaja dentro de la factura (HRP `lnbc2500u1…`). Leerlo evita
+    // pedirle al que paga un importe que la factura ya fija.
+    return {
+      raw: withoutLightning,
+      kind: 'lightning',
+      amountSats: invoiceAmountSats(withoutLightning),
+    };
   }
   if (isArkadeAddress(value)) return { raw: value, kind: 'arkade' };
   if (isOnchainAddress(value)) return { raw: value, kind: 'onchain' };
