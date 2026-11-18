@@ -64,6 +64,15 @@ Fuentes: APIs/términos Arkade → skill + MCP `arkade-docs`. Este archivo → d
 - Al claim: preimagen vía `preimageForSwapRecord(wallet, projection)` desde `profile.hashlock`, verificar contra `paymentHash`, `session.reportSettled(preimage)`. Best-effort; si falla, pago offline por dirección Arkade.
 - SSE solo foreground. App cerrada → servidor LNURL usa dirección Arkade registrada.
 
+## Activos (Arkade Mint)
+- Emitir: `wallet.assetManager.issue({ amount, metadata:{name,ticker,decimals,icon}, controlAssetId? })`.
+- Enviar: `wallet.send({ recipients:[{ address, assets:[{ assetId, amount }] }] })`. Sólo dirección Arkade; `amount` de BTC por defecto = dust del operador (sats de portador).
+- Recibir: el activo llega al VTXO de la dirección Arkade; no hay dirección por activo. Compartir dirección + `assetId`.
+- Saldo: `WalletBalance.assets` (todo) y `availableAssets` (gastable, lo que usa `BalanceView.assets`).
+- `assetId` en el saldo es hex sin prefijo; los mercados lo publican CAIP (`arkade:<red>/asset:<hex>`) → normalizar con `bareAssetId`.
+- Metadatos (ticker/decimals): `assetManager.getAssetDetails`, con caché en `lib/arkade/assetInfo.ts`.
+- UI: tocar un activo en Billetera abre `app/asset.tsx` (Enviar / Recibir / Swap); `send?assetId=` y `receive?assetId=` van en modo activo.
+
 ## Renovación
 - `settlementConfig.vtxoThreshold` = 259200 s (3 días).
 - `ExpoWallet.setup` sincroniza al arrancar pero **NO renueva**. Renovación solo con app abierta + gestor settlement activo.

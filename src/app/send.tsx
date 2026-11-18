@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import {
   BackButton,
@@ -17,8 +17,11 @@ import {
   Title,
 } from '../components/ui';
 import { colors, spacing } from '../constants/theme';
+import { useAssetInfo } from '../hooks/useAssetInfo';
 import { useWallet } from '../hooks/useWallet';
 import { usePreferences } from '../hooks/usePreferences';
+import { bareAssetId } from '../lib/arkade/assetInfo';
+import { formatUnits, parseUnits } from '../lib/arkade/assets';
 import { arkadeAddressHrp, swapErrorMessage } from '../lib/arkade/lightning';
 import {
   destinationKindLabel,
@@ -30,7 +33,7 @@ import { errorMessage, formatSats, satsFromInput, shorten } from '../lib/format'
 type Stage = 'form' | 'confirm' | 'success';
 
 type SendResult =
-  | { kind: 'arkade'; txid: string }
+  | { kind: 'arkade'; txid: string; assetText?: string }
   | {
       kind: 'onchain';
       txid: string;
@@ -82,8 +85,22 @@ function describeError(error: unknown): string {
 }
 
 export default function SendScreen() {
-  const { sendPayment, watchOutcome, balance, refresh, network } = useWallet();
+  const { sendPayment, sendAsset, watchOutcome, balance, refresh, network } =
+    useWallet();
   const { formatBitcoin } = usePreferences();
+  const params = useLocalSearchParams<{ assetId?: string }>();
+  const assetId =
+    typeof params.assetId === 'string' && params.assetId
+      ? bareAssetId(params.assetId)
+      : '';
+  const assetMode = Boolean(assetId);
+  const assetInfoMap = useAssetInfo(assetId ? [assetId] : []);
+  const assetInfo = assetId ? assetInfoMap[assetId] : undefined;
+  const assetTicker = assetInfo?.ticker ?? 'activo';
+  const assetDecimals = assetInfo?.decimals ?? 0;
+  const assetBalance = assetId
+    ? balance?.assets.find(entry => bareAssetId(entry.assetId) === assetId)
+    : undefined;
 
   const [stage, setStage] = useState<Stage>('form');
   const [destination, setDestination] = useState('');
@@ -94,6 +111,9 @@ export default function SendScreen() {
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [result, setResult] = useState<SendResult | null>(null);
   const unsubscribeRef = useRef<null | (() => void)>(null);
+
+  const assetAmountAtomic =
+    assetMode && amount.trim() ? parseUnits(amount, assetDecimals) : null;
 
   useEffect(
     () => () => {
@@ -112,6 +132,10 @@ export default function SendScreen() {
   const needsAmount =
     kind === 'onchain' || kind === 'arkade' || kind === 'lnurl';
   const isArkade = kind === 'arkade';
+  const assetAmountText =
+    assetAmountAtomic !== null
+      ? `${formatUnits(assetAmountAtomic, assetDecimals)} ${assetTicker}`
+      : '';
 
   const fillFromParsed = (value: string) => {
     setDestination(value);
@@ -119,7 +143,7 @@ export default function SendScreen() {
     setLocalError(null);
     setErrorDetails(null);
     const next = parseDestination(value);
-    if (next.amountSats && next.amountSats > 0) {
+    if (!assetMode && next.amountSats && next.amountSats > 0) {
       setAmount(String(next.amountSats));
     }
   };
@@ -134,6 +158,37 @@ export default function SendScreen() {
   };
 
   const validate = (): string | null => {
+    if (assetMode) {
+      if (kind === 'unknown') {
+        const hrp = arkadeAddressHrp(parsed.raw || destination);
+        if (hrp) {
+          return `Esa dirección Arkade es de ${
+            hrp === 'ark' ? 'Bitcoin mainnet' : 'otra red de pruebas'
+          }. CanoArk está conectado a ${network.label}: usa una dirección ${network.addressPrefix}….`;
+        }
+        return 'Para enviar un activo necesitas una dirección Arkade (ark1… / tark1…).';
+      }
+      if (kind !== 'arkade') {
+        return `Los activos sólo se pueden enviar a una dirección Arkade. Una ${destinationKindLabel(
+          kind
+        ).toLowerCase()} no puede llevarlos.`;
+      }
+      if (assetAmountAtomic === null) {
+        return `Indica una cantidad válida de ${assetTicker} (hasta ${assetDecimals} decimales).`;
+      }
+      if (assetAmountAtomic <= 0n) {
+        return 'Indica una cantidad mayor que cero.';
+      }
+      const held = assetBalance?.amount ?? 0n;
+      if (assetAmountAtomic > held) {
+        return `Saldo insuficiente: tienes ${formatUnits(
+          held,
+          assetDecimals
+        )} ${assetTicker}.`;
+      }
+      return null;
+    }
+
     if (kind === 'unknown') {
       const hrp = arkadeAddressHrp(parsed.raw || destination);
       if (hrp) {
@@ -174,6 +229,17 @@ export default function SendScreen() {
     unsubscribeRef.current = null;
 
     try {
+      if (assetMode) {
+        const sent = await sendAsset({
+          assetId,
+          amount: assetAmountAtomic ?? 0n,
+          address: parsed.raw || destination.trim(),
+        });
+        setResult({ kind: 'arkade', txid: sent.txid, assetText: assetAmountText });
+        setStage('success');
+        return;
+      }
+
       const outcome = await sendPayment(
         parsed.raw || destination.trim(),
         amountSats,
@@ -276,21 +342,27 @@ export default function SendScreen() {
                   : 'Pago en curso'
               : result.kind === 'onchain'
                 ? 'Salida onchain enviada'
-                : 'Pago Arkade enviado'}
+                : result.assetText
+                  ? 'Activo enviado'
+                  : 'Pago Arkade enviado'}
           </Title>
           <Text style={styles.successAmount}>
             {result.kind === 'swap'
               ? result.amountSats
                 ? formatBitcoin(result.amountSats)
                 : 'Según factura'
-              : formatBitcoin(amountSats)}
+              : result.kind === 'arkade' && result.assetText
+                ? result.assetText
+                : formatBitcoin(amountSats)}
           </Text>
           <Text style={styles.successText}>
             {result.kind === 'swap'
               ? outcomeLabel(result.outcome)
               : result.kind === 'onchain'
                 ? 'El operador incluyó la salida en una ronda de settlement. El destinatario recibe el pago en la commitment transaction.'
-                : 'La transacción se envió al operador. El saldo se actualizará en unos segundos.'}
+                : result.kind === 'arkade' && result.assetText
+                  ? 'El activo viaja en un VTXO del destinatario, junto a los sats de portador que exige el operador.'
+                  : 'La transacción se envió al operador. El saldo se actualizará en unos segundos.'}
           </Text>
         </View>
 
@@ -358,18 +430,20 @@ export default function SendScreen() {
         ) : null}
 
         <Card
-          title={destinationKindLabel(kind)}
+          title={assetMode ? `Enviar ${assetTicker}` : destinationKindLabel(kind)}
           subtitle="Revisa estos datos antes de firmar."
         >
           <Row label="Destino" value={shorten(parsed.raw || destination, 14, 10)} mono />
           <Row
             label="Importe"
             value={
-              kind === 'lightning'
-                ? parsed.amountSats
-                  ? `${formatSats(parsed.amountSats)} sats (BIP21)`
-                  : 'Según factura'
-                : `${formatSats(amountSats)} sats`
+              assetMode
+                ? assetAmountText || `— ${assetTicker}`
+                : kind === 'lightning'
+                  ? parsed.amountSats
+                    ? `${formatSats(parsed.amountSats)} sats (BIP21)`
+                    : 'Según factura'
+                  : `${formatSats(amountSats)} sats`
             }
           />
           <Row
@@ -387,10 +461,25 @@ export default function SendScreen() {
           <Row label="Red" value={network.label} />
           <Row
             label="Saldo disponible"
-            value={balance ? `${formatSats(balance.available)} sats` : '—'}
+            value={
+              assetMode
+                ? `${formatUnits(
+                    assetBalance?.amount ?? 0n,
+                    assetDecimals
+                  )} ${assetTicker}`
+                : balance
+                  ? `${formatSats(balance.available)} sats`
+                  : '—'
+            }
           />
         </Card>
 
+        {assetMode ? (
+          <Notice tone="info">
+            El activo se transfiere dentro de Arkade, sin solver. El destinatario
+            lo recibe en su dirección Arkade junto a los sats de portador.
+          </Notice>
+        ) : null}
         {kind === 'lightning' ? (
           <Notice tone="info">
             Una factura Lightning se paga mediante un swap. El solver recibe el
@@ -438,9 +527,15 @@ export default function SendScreen() {
     <Screen>
       <BackButton />
       <View style={styles.header}>
-        <Title>Enviar</Title>
+        <Title>{assetMode ? `Enviar ${assetTicker}` : 'Enviar'}</Title>
         <Badge
-          label={balance ? formatBitcoin(balance.available) : 'sin datos'}
+          label={
+            assetMode
+              ? `${formatUnits(assetBalance?.amount ?? 0n, assetDecimals)} ${assetTicker}`
+              : balance
+                ? formatBitcoin(balance.available)
+                : 'sin datos'
+          }
           tone="neutral"
         />
       </View>
@@ -454,12 +549,23 @@ export default function SendScreen() {
         />
       ) : null}
 
+      {assetMode ? (
+        <Notice tone="info">
+          Envía {assetTicker} a otra billetera Arkade. El destinatario recibirá
+          el activo en su dirección; los sats de portador los pone tu saldo.
+        </Notice>
+      ) : null}
+
       <Card>
         <Field
           label="Destino"
           value={destination}
           onChangeText={fillFromParsed}
-          placeholder="lnbc… / bc1… / tb1… / tark1… / usuario@dominio"
+          placeholder={
+            assetMode
+              ? `${network.addressPrefix}… (dirección Arkade)`
+              : 'lnbc… / bc1… / tb1… / tark1… / usuario@dominio'
+          }
           autoCapitalize="none"
           autoCorrect={false}
           multiline
@@ -469,7 +575,11 @@ export default function SendScreen() {
           {destination.trim() ? (
             <Badge
               label={destinationKindLabel(kind)}
-              tone={kind === 'unknown' ? 'danger' : 'success'}
+              tone={
+                kind === 'unknown' || (assetMode && kind !== 'arkade')
+                  ? 'danger'
+                  : 'success'
+              }
             />
           ) : (
             <Text style={styles.metaMuted}>Pega o escribe un destino</Text>
@@ -480,30 +590,40 @@ export default function SendScreen() {
         </View>
 
         <Field
-          label="Importe (sats)"
+          label={assetMode ? `Cantidad (${assetTicker})` : 'Importe (sats)'}
           value={amount}
           onChangeText={setAmount}
           placeholder="0"
-          keyboardType="number-pad"
+          keyboardType={assetMode ? 'decimal-pad' : 'number-pad'}
           editable={kind !== 'lightning'}
           hint={
-            kind === 'lightning'
-              ? parsed.amountSats
-                ? `La factura/BIP21 ya incluye ${formatSats(
-                    parsed.amountSats
-                  )} sats.`
-                : 'La factura ya incluye el importe; este campo se ignora.'
-              : kind === 'lnurl'
-                ? 'Obligatorio: se pedirá una factura a la dirección por este importe.'
-                : parsed.amountSats
-                  ? `Importe detectado en el BIP21: ${formatSats(
+            assetMode
+              ? assetDecimals > 0
+                ? `Hasta ${assetDecimals} decimales. Tienes ${formatUnits(
+                    assetBalance?.amount ?? 0n,
+                    assetDecimals
+                  )} ${assetTicker}.`
+                : `Unidades enteras de ${assetTicker}. Tienes ${formatUnits(
+                    assetBalance?.amount ?? 0n,
+                    assetDecimals
+                  )} ${assetTicker}.`
+              : kind === 'lightning'
+                ? parsed.amountSats
+                  ? `La factura/BIP21 ya incluye ${formatSats(
                       parsed.amountSats
                     )} sats.`
-                  : 'Obligatorio para direcciones onchain y Arkade.'
+                  : 'La factura ya incluye el importe; este campo se ignora.'
+                : kind === 'lnurl'
+                  ? 'Obligatorio: se pedirá una factura a la dirección por este importe.'
+                  : parsed.amountSats
+                    ? `Importe detectado en el BIP21: ${formatSats(
+                        parsed.amountSats
+                      )} sats.`
+                    : 'Obligatorio para direcciones onchain y Arkade.'
           }
         />
 
-        {!isArkade ? (
+        {!isArkade && !assetMode ? (
           <Field
             label={
               kind === 'onchain'

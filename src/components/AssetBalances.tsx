@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
 import { Card } from './ui';
 import { colors, spacing } from '../constants/theme';
 import { useAssetInfo } from '../hooks/useAssetInfo';
@@ -29,7 +30,15 @@ export function AssetBalances({ assets }: { assets: BalanceAsset[] }) {
           : null;
 
         return (
-          <View key={id} style={styles.row}>
+          <Pressable
+            key={id}
+            accessibilityRole="button"
+            accessibilityLabel={`Abrir ${ticker}`}
+            onPress={() =>
+              router.push({ pathname: '/asset', params: { assetId: id } })
+            }
+            style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+          >
             <View style={styles.labels}>
               <Text style={styles.ticker}>{ticker}</Text>
               {info?.name ? (
@@ -46,7 +55,7 @@ export function AssetBalances({ assets }: { assets: BalanceAsset[] }) {
                 <Text style={styles.usd}>≈ {formatFiat(usd, 'USD')}</Text>
               ) : null}
             </View>
-          </View>
+          </Pressable>
         );
       })}
       <Text style={styles.note}>
@@ -97,5 +106,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 16,
     marginTop: spacing.sm,
+  },
+  pressed: {
+    opacity: 0.6,
   },
 });

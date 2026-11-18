@@ -12,7 +12,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import type { Quote, Swap } from '@arkade-os/swap';
 import { ASSET_CARRIER_SATS } from '@arkade-os/swap/protocol';
 import {
@@ -107,13 +107,16 @@ const clockOf = (timestamp: number): string => {
 export default function SwapScreen() {
   const { status, balance, refresh, cashDustSats, watchOutcome } = useWallet();
   const { formatBitcoin } = usePreferences();
+  const params = useLocalSearchParams<{ direction?: string }>();
 
   const [markets, setMarkets] = useState<BtcUsdMarket[]>([]);
   const [marketIndex, setMarketIndex] = useState(0);
   const [loadingMarkets, setLoadingMarkets] = useState(() => swapsAvailable());
   const [marketsError, setMarketsError] = useState<string | null>(null);
 
-  const [direction, setDirection] = useState<SwapDirection>('btc-to-usd');
+  const [direction, setDirection] = useState<SwapDirection>(
+    params.direction === 'usd-to-btc' ? 'usd-to-btc' : 'btc-to-usd'
+  );
   const [amountText, setAmountText] = useState('');
   const [usdBalance, setUsdBalance] = useState<bigint>(0n);
 

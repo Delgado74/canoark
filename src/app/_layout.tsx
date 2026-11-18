@@ -24,6 +24,7 @@ export default function RootLayout() {
           <Stack.Screen name="swap" />
           <Stack.Screen name="receive" />
           <Stack.Screen name="transaction" />
+          <Stack.Screen name="asset" />
           <Stack.Screen name="advanced" />
           <Stack.Screen name="unlock" />
           <Stack.Screen name="(tabs)" />

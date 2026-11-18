@@ -19,6 +19,7 @@ import {
   Badge,
   Button,
   Card,
+  CopyField,
   ErrorBanner,
   Field,
   Notice,
@@ -30,7 +31,9 @@ import {
 } from '../components/ui';
 import { QrCode } from '../components/QrCode';
 import { colors, spacing } from '../constants/theme';
+import { useAssetInfo } from '../hooks/useAssetInfo';
 import { useWallet } from '../hooks/useWallet';
+import { bareAssetId, shortAssetId } from '../lib/arkade/assetInfo';
 import {
   getLnurlConfig,
   loadLightningAddress,
@@ -97,11 +100,17 @@ export default function ReceiveScreen() {
   } = useWallet();
   const { width } = useWindowDimensions();
   const lnurlConfig = getLnurlConfig();
-  const params = useLocalSearchParams<{ tab?: string }>();
+  const params = useLocalSearchParams<{ tab?: string; assetId?: string }>();
   const initialTab: ReceiveTab =
     params.tab === 'lightning' || params.tab === 'onchain'
       ? params.tab
       : 'arkade';
+  const assetId =
+    typeof params.assetId === 'string' && params.assetId
+      ? bareAssetId(params.assetId)
+      : '';
+  const assetInfos = useAssetInfo(assetId ? [assetId] : []);
+  const assetTicker = assetInfos[assetId]?.ticker ?? shortAssetId(assetId);
 
   const [tab, setTab] = useState<ReceiveTab>(initialTab);
   const [amount, setAmount] = useState('');
@@ -349,6 +358,20 @@ export default function ReceiveScreen() {
                 : 'Sin servidor LNURL configurado. Las facturas funcionan mientras la app esté abierta.'}
             </Notice>
           ) : null}
+        </Card>
+      ) : null}
+
+      {tab === 'arkade' && assetId ? (
+        <Card
+          title={`Recibir ${assetTicker}`}
+          subtitle="El activo llega a tu dirección Arkade."
+        >
+          <Paragraph>
+            Comparte tu dirección Arkade con quien te envía el activo. El envío
+            viaja dentro de Arkade, así que también necesita este ID para no
+            confundirlo con otro activo.
+          </Paragraph>
+          <CopyField label="ID del activo" value={assetId} />
         </Card>
       ) : null}
 

@@ -49,6 +49,7 @@ import {
   watchSwap,
 } from '../lib/arkade/lightning';
 import { sendCollaborativeExit } from '../lib/arkade/offboard';
+import { bareAssetId } from '../lib/arkade/assetInfo';
 import { wipeStorageDatabases } from '../lib/storage/sqlite';
 import {
   clearWalletMode,
@@ -115,6 +116,16 @@ type WalletContextValue = {
     amountSats: number,
     maxFeeSats: number
   ) => Promise<SendOutcome>;
+  /**
+   * Envía unidades de un activo Arkade a otra dirección Arkade. El activo
+   * viaja en un VTXO que lleva además los sats de portador (dust) que exige
+   * el operador; los elige el SDK.
+   */
+  sendAsset: (params: {
+    assetId: string;
+    amount: bigint;
+    address: string;
+  }) => Promise<{ txid: string }>;
   createInvoice: (amountSats: number) => Promise<{
     id: string;
     invoice: string;
@@ -621,6 +632,36 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     [ensureSession, refresh]
   );
 
+  /**
+   * Los activos Arkade se transfieren con `wallet.send` adjuntándolos a un
+   * output del destinatario. No hay swap ni solver: es la misma transferencia
+   * instantánea que un pago Arkade, con una lista de activos por destinatario.
+   */
+  const sendAsset = useCallback(
+    async (params: { assetId: string; amount: bigint; address: string }) => {
+      const session = await ensureSession();
+      const address = params.address.trim();
+      const assetId = bareAssetId(params.assetId);
+
+      if (!isArkadeAddress(address)) {
+        throw new Error(
+          'Los activos sólo se pueden enviar a una dirección Arkade (ark1… / tark1…).'
+        );
+      }
+      if (!assetId) throw new Error('Indica qué activo quieres enviar.');
+      if (params.amount <= 0n) {
+        throw new Error('Indica una cantidad mayor que cero.');
+      }
+
+      const txid = await session.wallet.send({
+        recipients: [{ address, assets: [{ assetId, amount: params.amount }] }],
+      });
+      await refresh();
+      return { txid };
+    },
+    [ensureSession, refresh]
+  );
+
   const createInvoice = useCallback(
     async (amountSats: number) => {
       await ensureSession();
@@ -899,6 +940,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     wipe,
     refresh,
     sendPayment,
+    sendAsset,
     createInvoice,
     watchOutcome,
     revealMnemonic,
