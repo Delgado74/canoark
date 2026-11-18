@@ -3,7 +3,8 @@
 Billetera Android de [Arkade](https://docs.arkadeos.com) con Expo, React Native y `@arkade-os/sdk`.
 
 - Pagos instantáneos dentro de Arkade.
-- Pagos Lightning (BOLT11) y onchain vía solvers.
+- Pagos Lightning vía solvers: factura BOLT11 o Lightning Address (se resuelve a BOLT11 con LNURL-pay).
+- Envíos onchain por salida colaborativa con el operador (`wallet.settle`), sin solver.
 - Recepción Lightning con factura o Lightning Address (LNURL).
 - Mnemónica cifrada con Android Keystore; estado en SQLite.
 - Sin EAS Build: APK local con Gradle o GitHub Actions.

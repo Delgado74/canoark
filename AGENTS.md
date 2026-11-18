@@ -44,7 +44,9 @@ Fuentes: APIs/términos Arkade → skill + MCP `arkade-docs`. Este archivo → d
 
 ## Pagos
 - Arkade: `wallet.send({ recipients:[{address, amount:sats}] })`. Instantáneo, sin solver.
-- Lightning/onchain: `swaps.pay(dest, { amount: BigInt(sats) /*solo onchain*/, maxFee:{amount:BigInt(max), asset:btcOn('arkade', swapNetwork)} })`.
+- Lightning (BOLT11): `swaps.pay(invoice, { maxFee:{amount:BigInt(max), asset:btcOn('arkade', swapNetwork)} })`. Sin `amount`: lo lleva la factura.
+- Lightning Address (`usuario@dominio`): `resolveLightningAddress(address, sats)` (`src/lib/arkade/lnurl-pay.ts`) pide la factura por LNURL-pay y luego `swaps.pay(invoice, {maxFee})`.
+- Onchain: **no usa solver**. `sendCollaborativeExit(wallet, dest, sats, maxFee)` en `src/lib/arkade/offboard.ts` → `wallet.settle({inputs, outputs})`; la salida sale en la commitment transaction. `offboard.ts` decide inputs, fee y cambio.
 - `pay()` → `{kind:'swap',swap}` | `{kind:'payment',txid}`.
 - `SwapUpdate.outcome`: accepted|funding|funded|open|paid|claimed|refunded|lapsed|failed|needs_recovery.
 - Mantener cliente swaps vivo + `onUpdate()` para claim/refund/estado. Sin pago del solver → refund al vencer `refundLocktime`.
