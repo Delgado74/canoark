@@ -13,17 +13,19 @@ export function SettingsHeader({
   badge?: string;
 }) {
   return (
-    <View style={styles.header}>
+    <View style={styles.headerWrap}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Volver"
         onPress={() => router.back()}
         style={({ pressed }) => [styles.back, pressed && styles.pressed]}
       >
-        <Text style={styles.backText}>‹</Text>
+        <Text style={styles.backText}>{'<VOLVER'}</Text>
       </Pressable>
-      <Title>{title}</Title>
-      {badge ? <Badge label={badge} /> : <View style={styles.back} />}
+      <View style={styles.titleRow}>
+        <Title>{title}</Title>
+        {badge ? <Badge label={badge} /> : null}
+      </View>
     </View>
   );
 }
@@ -87,25 +89,25 @@ export function UnavailableNotice({ children }: { children: ReactNode }) {
 }
 
 const styles = StyleSheet.create({
-  header: {
+  headerWrap: {
+    gap: spacing.xs,
+  },
+  titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
-    minHeight: 36,
   },
   back: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+    paddingRight: spacing.sm,
   },
   backText: {
-    color: colors.text,
-    fontSize: 30,
-    lineHeight: 32,
-    marginTop: -2,
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   pressed: {
     opacity: 0.6,

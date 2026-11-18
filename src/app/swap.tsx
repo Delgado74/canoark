@@ -16,6 +16,7 @@ import { router } from 'expo-router';
 import type { Quote, Swap } from '@arkade-os/swap';
 import { ASSET_CARRIER_SATS } from '@arkade-os/swap/protocol';
 import {
+  BackButton,
   Badge,
   Button,
   Card,
@@ -462,6 +463,7 @@ export default function SwapScreen() {
 
     return (
       <Screen>
+        <BackButton onPress={() => router.replace('/(tabs)')} />
         <Title>
           {success
             ? 'Swap completado'
@@ -543,11 +545,6 @@ export default function SwapScreen() {
         ) : null}
 
         <Button title="Hacer otro swap" variant="secondary" onPress={reset} />
-        <Button
-          title="Volver al inicio"
-          variant="ghost"
-          onPress={() => router.replace('/(tabs)')}
-        />
       </Screen>
     );
   }
@@ -555,15 +552,12 @@ export default function SwapScreen() {
   if (stage === 'confirm') {
     return (
       <Screen>
-        <Pressable
+        <BackButton
           onPress={() => {
             setStage('form');
             setActionError(null);
           }}
-          style={styles.back}
-        >
-          <Text style={styles.backText}>‹ Editar</Text>
-        </Pressable>
+        />
 
         <View style={styles.header}>
           <Title>Confirmar swap</Title>
@@ -641,9 +635,7 @@ export default function SwapScreen() {
 
   return (
     <Screen>
-      <Pressable onPress={() => router.back()} style={styles.back}>
-        <Text style={styles.backText}>‹ Volver</Text>
-      </Pressable>
+      <BackButton />
 
       <View style={styles.header}>
         <Title>Cambiar BTC / USD</Title>

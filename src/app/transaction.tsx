@@ -1,9 +1,9 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { useMemo } from 'react';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import {
+  BackButton,
   Badge,
-  Button,
   Card,
   CopyField,
   Notice,
@@ -94,6 +94,7 @@ export default function TransactionDetailScreen() {
 
   return (
     <Screen>
+      <BackButton />
       <View style={styles.header}>
         <Title>Transacción</Title>
         <Badge label={status.label} tone={status.tone} />
@@ -166,11 +167,6 @@ export default function TransactionDetailScreen() {
         )}
       </Card>
 
-      <Button
-        title="Volver al historial"
-        variant="ghost"
-        onPress={() => router.back()}
-      />
     </Screen>
   );
 }

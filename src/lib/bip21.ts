@@ -1,7 +1,13 @@
 import { BIP21 } from '@arkade-os/sdk';
 import { isArkadeAddress, isLightningInvoice, isOnchainAddress } from './arkade/lightning';
+import { isLightningAddress } from './arkade/lnurl-pay';
 
-export type ParsedDestinationKind = 'arkade' | 'lightning' | 'onchain' | 'unknown';
+export type ParsedDestinationKind =
+  | 'arkade'
+  | 'lightning'
+  | 'lnurl'
+  | 'onchain'
+  | 'unknown';
 
 export type ParsedDestination = {
   /** Texto normalizado que se pasa al SDK. */
@@ -9,7 +15,6 @@ export type ParsedDestination = {
   kind: ParsedDestinationKind;
   /** Importe incluido en el BIP21 o factura, si se puede leer. */
   amountSats?: number;
-  lnurl?: string;
 };
 
 const stripScheme = (value: string, scheme: string): string =>
@@ -43,11 +48,13 @@ export function parseDestination(input: string): ParsedDestination {
         return { raw: ark, kind: 'arkade', amountSats };
       }
       if (lightning) {
+        if (isLightningAddress(lightning)) {
+          return { raw: lightning, kind: 'lnurl', amountSats };
+        }
         return {
           raw: lightning,
           kind: isLightningInvoice(lightning) ? 'lightning' : 'unknown',
           amountSats,
-          lnurl: lightning.includes('@') ? lightning : undefined,
         };
       }
       if (address && isOnchainAddress(address)) {
@@ -66,11 +73,10 @@ export function parseDestination(input: string): ParsedDestination {
   if (isArkadeAddress(value)) return { raw: value, kind: 'arkade' };
   if (isOnchainAddress(value)) return { raw: value, kind: 'onchain' };
 
-  // Lightning Address (usuario@dominio). El solver actual de @arkade-os/swap
-  // no acepta LNURL-pay como destino directo, pero lo identificamos para dar
-  // un mensaje útil en vez de "destino desconocido".
-  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-    return { raw: value, kind: 'unknown', lnurl: value };
+  // Lightning Address (usuario@dominio): se paga resolviendo la factura con
+  // LNURL-pay (`resolveLightningAddress`) y enviándola al solver.
+  if (isLightningAddress(value)) {
+    return { raw: value, kind: 'lnurl' };
   }
 
   return { raw: value, kind: 'unknown' };
@@ -82,6 +88,8 @@ export function destinationKindLabel(kind: ParsedDestinationKind): string {
       return 'Dirección Arkade';
     case 'lightning':
       return 'Factura Lightning';
+    case 'lnurl':
+      return 'Lightning Address';
     case 'onchain':
       return 'Dirección onchain';
     default:

@@ -15,6 +15,7 @@ import {
   useLocalSearchParams,
 } from 'expo-router';
 import {
+  BackButton,
   Badge,
   Button,
   Card,
@@ -283,6 +284,7 @@ export default function ReceiveScreen() {
 
   return (
     <Screen>
+      <BackButton />
       <View style={styles.header}>
         <Title>Recibir</Title>
         <Badge label={network.label} tone="primary" />
@@ -338,11 +340,6 @@ export default function ReceiveScreen() {
                 El swap se completó y los sats ya forman parte de tu saldo
                 Arkade. Puedes cerrar esta pantalla.
               </Paragraph>
-              <Button
-                title="Volver al inicio"
-                variant="secondary"
-                onPress={() => router.replace('/(tabs)')}
-              />
             </Card>
           ) : null}
           {!invoice && !lnurlAddress ? (
@@ -540,12 +537,6 @@ export default function ReceiveScreen() {
           Tu dirección Arkade: {shorten(address, 14, 10)}
         </Text>
       ) : null}
-
-      <Button
-        title="Volver al inicio"
-        variant="ghost"
-        onPress={() => router.back()}
-      />
     </Screen>
   );
 }

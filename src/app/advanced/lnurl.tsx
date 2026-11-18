@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text } from 'react-native';
-import { router } from 'expo-router';
 import {
   Button,
   ErrorBanner,
@@ -172,11 +171,6 @@ export default function LightningAddressScreen() {
         Con la sesión activa la app responde facturas al instante. Deténla
         cuando no la necesites para ahorrar batería.
       </Paragraph>
-      <Button
-        title="Volver a avanzado"
-        variant="ghost"
-        onPress={() => router.back()}
-      />
     </SettingsScreen>
   );
 }

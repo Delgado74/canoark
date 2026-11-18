@@ -36,8 +36,13 @@ export function StepHeader({
     <View style={styles.header}>
       <View style={styles.headerRow}>
         {onBack ? (
-          <Pressable onPress={onBack} style={styles.back} accessibilityRole="button">
-            <Text style={styles.backText}>‹ Atrás</Text>
+          <Pressable
+            onPress={onBack}
+            style={styles.back}
+            accessibilityRole="button"
+            accessibilityLabel="Volver"
+          >
+            <Text style={styles.backText}>{'<VOLVER'}</Text>
           </Pressable>
         ) : (
           <View />
@@ -227,6 +232,7 @@ export function SecuritySetup({
           onChangeText={onChangePassphrase}
           placeholder={`Mínimo ${MIN_PASSPHRASE_LENGTH} caracteres`}
           secureTextEntry
+          showPasswordToggle
           autoCapitalize="none"
           autoCorrect={false}
           autoComplete="off"
@@ -241,6 +247,7 @@ export function SecuritySetup({
           onChangeText={onChangeConfirm}
           placeholder="Repite la passphrase"
           secureTextEntry
+          showPasswordToggle
           autoCapitalize="none"
           autoCorrect={false}
           autoComplete="off"

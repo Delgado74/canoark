@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import { colors, radius, spacing } from '../constants/theme';
 
@@ -239,19 +240,78 @@ export function MenuRow({
 export function Field({
   label,
   hint,
+  showPasswordToggle = false,
+  secureTextEntry,
+  style,
   ...props
-}: TextInputProps & { label: string; hint?: string }) {
+}: TextInputProps & {
+  label: string;
+  hint?: string;
+  showPasswordToggle?: boolean;
+}) {
+  const [hidden, setHidden] = useState(true);
+  const isSecure = showPasswordToggle ? hidden : secureTextEntry;
+
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
-      <TextInput
-        placeholderTextColor={colors.textMuted}
-        selectionColor={colors.primary}
-        style={[styles.input, props.multiline && styles.inputMultiline]}
-        {...props}
-      />
+      {showPasswordToggle ? (
+        <View style={styles.inputRow}>
+          <TextInput
+            placeholderTextColor={colors.textMuted}
+            selectionColor={colors.primary}
+            secureTextEntry={isSecure}
+            style={[
+              styles.input,
+              styles.inputFlex,
+              props.multiline && styles.inputMultiline,
+              style,
+            ]}
+            {...props}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={hidden ? 'Mostrar passphrase' : 'Ocultar passphrase'}
+            onPress={() => setHidden(value => !value)}
+            hitSlop={8}
+            style={({ pressed }) => [
+              styles.eyeButton,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.eyeText}>{hidden ? '👁' : '🙈'}</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <TextInput
+          placeholderTextColor={colors.textMuted}
+          selectionColor={colors.primary}
+          secureTextEntry={secureTextEntry}
+          style={[styles.input, props.multiline && styles.inputMultiline, style]}
+          {...props}
+        />
+      )}
       {hint ? <Text style={styles.hint}>{hint}</Text> : null}
     </View>
+  );
+}
+
+export function BackButton({
+  onPress,
+  label = '<VOLVER',
+}: {
+  onPress?: () => void;
+  label?: string;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Volver"
+      onPress={onPress ?? (() => router.back())}
+      style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
+    >
+      <Text style={styles.backButtonText}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -680,5 +740,37 @@ const styles = StyleSheet.create({
     height: StyleSheet.hairlineWidth,
     backgroundColor: colors.border,
     marginVertical: spacing.sm,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  inputFlex: {
+    flex: 1,
+  },
+  eyeButton: {
+    minWidth: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
+  },
+  eyeText: {
+    fontSize: 18,
+  },
+  backButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+    paddingRight: spacing.sm,
+  },
+  backButtonText: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
 });

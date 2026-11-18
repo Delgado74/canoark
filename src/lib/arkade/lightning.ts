@@ -19,6 +19,7 @@ import {
 import { ACTIVE_NETWORK } from '../../constants/network';
 import { getArkadeSession } from './client';
 import { compressedPublicKeyHex } from './identity';
+import { isLightningAddress, resolveLightningAddress } from './lnurl-pay';
 
 /** Asset id del BTC dentro de Arkade, en la red configurada. */
 function btcAsset() {
@@ -69,6 +70,9 @@ const feeCeiling = (maxFeeSats: number) => ({
  * Paga una factura BOLT11 con el solver. Los envíos onchain **no** pasan por
  * aquí: se resuelven con una salida colaborativa (`wallet.settle`), que paga la
  * dirección de destino sin swap ni HTLC.
+ *
+ * Acepta también una Lightning Address (`usuario@dominio`): se resuelve con
+ * LNURL-pay a una factura BOLT11 por el importe indicado antes de pagar.
  */
 export async function payThroughSolver(
   destination: string,
@@ -77,7 +81,12 @@ export async function payThroughSolver(
 ): Promise<PayResult> {
   const { swaps } = getArkadeSession();
 
-  if (!isLightningInvoice(destination)) {
+  const target = destination.trim();
+  const invoice = isLightningAddress(target)
+    ? await resolveLightningAddress(target, amountSats)
+    : target;
+
+  if (!isLightningInvoice(invoice)) {
     throw new Error(
       'El solver sólo paga facturas Lightning. Para enviar onchain usa una dirección Bitcoin (la salida colaborativa).'
     );
@@ -86,7 +95,7 @@ export async function payThroughSolver(
     throw new Error('Indica cuántos sats quieres pagar.');
   }
 
-  return swaps.pay(destination.trim(), {
+  return swaps.pay(invoice, {
     maxFee: feeCeiling(maxFeeSats),
   });
 }

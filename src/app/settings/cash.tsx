@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { Alert, Pressable, Share, StyleSheet, Text, View } from 'react-native';
-import { router } from 'expo-router';
 import {
   ArkadeCash,
   ArkadeCashCreateError,
@@ -469,11 +468,6 @@ export default function CashSettingsScreen() {
                   setClaimResult(null);
                   setCashInput('');
                 }}
-              />
-              <Button
-                title="Volver a la billetera"
-                variant="ghost"
-                onPress={() => router.replace('/(tabs)')}
               />
             </Card>
           ) : null}
