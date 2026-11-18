@@ -1,5 +1,6 @@
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   StyleSheet,
   Text,
@@ -16,6 +17,7 @@ import { colors, spacing } from '../../constants/theme';
 import { useWallet } from '../../hooks/useWallet';
 import { usePreferences } from '../../hooks/usePreferences';
 import { formatSats } from '../../lib/format';
+import { AssetBalances } from '../../components/AssetBalances';
 import {
   TransactionRow,
   transactionKey,
@@ -150,6 +152,10 @@ export default function WalletScreen() {
         )}
       </Card>
 
+      {balance && balance.assets.length > 0 ? (
+        <AssetBalances assets={balance.assets} />
+      ) : null}
+
       <View style={styles.actions}>
         <QuickAction
           icon="↓"
@@ -157,11 +163,18 @@ export default function WalletScreen() {
           onPress={() => router.push({ pathname: '/receive', params: { tab: 'arkade' } })}
         />
         <QuickAction
-          icon="⚡"
-          label="Lightning"
-          onPress={() =>
-            router.push({ pathname: '/receive', params: { tab: 'lightning' } })
-          }
+          icon="⇄"
+          label="Swap"
+          onPress={() => {
+            if (network.name === 'mutinynet') {
+              router.push('/swap');
+              return;
+            }
+            Alert.alert(
+              'Swap BTC / USD',
+              'Estamos trabajando para llevarlo a mainnet. Pronto estará disponible; por ahora sólo funciona en Mutinynet.'
+            );
+          }}
         />
         <QuickAction
           icon="↑"

@@ -7,6 +7,7 @@ export type FiatCurrency =
   | 'BTC'
   | 'CHF'
   | 'CNY'
+  | 'CUP'
   | 'EUR'
   | 'GBP'
   | 'JPY'
@@ -29,6 +30,7 @@ export const FIAT_CURRENCIES: FiatCurrency[] = [
   'BTC',
   'CHF',
   'CNY',
+  'CUP',
   'EUR',
   'GBP',
   'JPY',
