@@ -1,5 +1,6 @@
 import { Text, type ColorValue } from 'react-native';
 import { Redirect, Tabs } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing } from '../../constants/theme';
 import { useWallet } from '../../hooks/useWallet';
 
@@ -14,6 +15,8 @@ const icon = (glyph: string) =>
 
 export default function TabsLayout() {
   const { status } = useWallet();
+  const insets = useSafeAreaInsets();
+  const bottomPadding = Math.max(insets.bottom, spacing.sm);
 
   if (status === 'loading') return null;
   if (status === 'locked') return <Redirect href="/unlock" />;
@@ -29,9 +32,12 @@ export default function TabsLayout() {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          height: 62,
+          height: 54 + bottomPadding,
           paddingTop: spacing.xs,
-          paddingBottom: spacing.sm,
+          paddingBottom: bottomPadding,
+        },
+        tabBarItemStyle: {
+          paddingVertical: 2,
         },
         tabBarLabelStyle: {
           fontSize: 11,

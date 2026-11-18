@@ -437,38 +437,49 @@ export default function SolversScreen() {
         </Paragraph>
       ) : (
         <View style={styles.list}>
-          {markets.map(market => (
-            <View key={`${market.key}:${market.solver}`} style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.pair}>{market.pair}</Text>
-                <Badge
-                  label={market.sourceType === 'local' ? 'Local' : 'Registro'}
-                  tone="neutral"
-                />
+          {markets.map(market => {
+            const [legA, legB] = market.legs;
+            return (
+              <View key={`${market.key}:${market.solver}`} style={styles.marketCard}>
+                <View style={styles.marketHeader}>
+                  <View style={styles.marketTitleBlock}>
+                    <Text style={styles.marketPair}>{market.pair}</Text>
+                    <Text style={styles.marketSolver} numberOfLines={1}>
+                      {market.solver}
+                    </Text>
+                  </View>
+                  <Badge
+                    label={market.sourceType === 'local' ? 'Local' : 'Registro'}
+                    tone="neutral"
+                  />
+                </View>
+
+                <View style={styles.marketSection}>
+                  <Text style={styles.marketSectionTitle}>Patas del mercado</Text>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>{assetLabel(legA.asset)}</Text>
+                    <Text style={styles.detailValue}>{limitLabel(legA.limits)}</Text>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>{assetLabel(legB.asset)}</Text>
+                    <Text style={styles.detailValue}>{limitLabel(legB.limits)}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Origen</Text>
+                  <Text
+                    style={[styles.detailValue, styles.detailMono]}
+                    numberOfLines={1}
+                  >
+                    {market.source}
+                  </Text>
+                </View>
               </View>
-              <Text style={styles.solver}>{market.solver}</Text>
-              <Text style={styles.meta}>
-                {assetLabel(market.legs[0].asset)} →{' '}
-                {assetLabel(market.legs[1].asset)}
-              </Text>
-              <Text style={styles.meta}>
-                {limitLabel(market.legs[0].limits)} ·{' '}
-                {limitLabel(market.legs[1].limits)}
-              </Text>
-              <Text style={styles.source} numberOfLines={1}>
-                {market.source}
-              </Text>
-            </View>
-          ))}
+            );
+          })}
         </View>
       )}
-
-      <Notice tone="info">
-        Los mercados vienen del mismo registro que usa Arkade Wallet. La comisión
-        real se muestra al cotizar cada pago. El estado de cada swap se lee del
-        repositorio local; en un envío onchain, «Reclamado» ya pagó la dirección
-        de destino.
-      </Notice>
     </SettingsScreen>
   );
 }
@@ -520,5 +531,65 @@ const styles = StyleSheet.create({
     color: colors.warning,
     fontSize: 11,
     marginTop: 2,
+  },
+  marketCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  marketHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  marketTitleBlock: {
+    flex: 1,
+    gap: 2,
+  },
+  marketPair: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  marketSolver: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  marketSection: {
+    gap: 6,
+    paddingTop: 2,
+  },
+  marketSectionTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  detailLabel: {
+    color: colors.textMuted,
+    fontSize: 12,
+    flexShrink: 0,
+  },
+  detailValue: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+    textAlign: 'right',
+  },
+  detailMono: {
+    fontFamily: 'monospace',
+    fontSize: 11,
+    fontWeight: '500',
   },
 });

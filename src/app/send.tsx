@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import {
+  BackButton,
   Badge,
   Button,
   Card,
@@ -249,6 +250,7 @@ export default function SendScreen() {
 
     return (
       <Screen>
+        <BackButton onPress={() => router.replace('/(tabs)')} />
         <View style={styles.success}>
           <View
             style={[
@@ -328,11 +330,6 @@ export default function SendScreen() {
           variant="ghost"
           onPress={() => router.replace('/(tabs)/history')}
         />
-        <Button
-          title="Volver al inicio"
-          variant="ghost"
-          onPress={() => router.replace('/(tabs)')}
-        />
       </Screen>
     );
   }
@@ -344,15 +341,12 @@ export default function SendScreen() {
   if (stage === 'confirm') {
     return (
       <Screen>
-        <Pressable
+        <BackButton
           onPress={() => {
             setStage('form');
             setLocalError(null);
           }}
-          style={styles.back}
-        >
-          <Text style={styles.backText}>‹ Editar</Text>
-        </Pressable>
+        />
 
         <Title>Confirmar envío</Title>
 
@@ -444,9 +438,7 @@ export default function SendScreen() {
 
   return (
     <Screen>
-      <Pressable onPress={() => router.back()} style={styles.back}>
-        <Text style={styles.backText}>‹ Volver</Text>
-      </Pressable>
+      <BackButton />
       <View style={styles.header}>
         <Title>Enviar</Title>
         <Badge

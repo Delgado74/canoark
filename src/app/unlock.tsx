@@ -85,6 +85,7 @@ export default function UnlockScreen() {
           onChangeText={setPassphrase}
           placeholder="Tu passphrase de desbloqueo"
           secureTextEntry
+          showPasswordToggle
           autoCapitalize="none"
           autoCorrect={false}
           autoComplete="off"

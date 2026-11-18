@@ -14,4 +14,8 @@ if (typeof global.crypto.getRandomValues !== 'function') {
   global.crypto.getRandomValues = Crypto.getRandomValues;
 }
 
+// @noble/secp256k1 v3 (firma ECDSA del token de Lightning Address y Schnorr
+// asíncrona) también necesita crypto.subtle. Hermes no lo incluye.
+require('./src/polyfills/webcrypto');
+
 require('expo-router/entry');
