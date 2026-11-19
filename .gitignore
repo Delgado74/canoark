@@ -12,7 +12,9 @@ expo-env.d.ts
 .env
 .env.local
 *.jks
+*.jks.b64
 *.keystore
+*.keystore.b64
 *.p8
 *.p12
 *.key

@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android APK (debug)
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ on:
       - 'v*'
 
 concurrency:
-  group: android-${{ github.ref }}
+  group: android-debug-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   build:
-    name: Build release APK
+    name: Build debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
@@ -25,10 +25,6 @@ jobs:
       EXPO_PUBLIC_ARKADE_NETWORK: ${{ vars.ARKADE_NETWORK || 'mutinynet' }}
       EXPO_PUBLIC_LNURL_BASE_URL: ${{ vars.LNURL_BASE_URL }}
       EXPO_PUBLIC_LNURL_DOMAIN: ${{ vars.LNURL_DOMAIN }}
-      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
       GRADLE_OPTS: -Dorg.gradle.daemon=false
 
     steps:
@@ -95,17 +91,14 @@ jobs:
       - name: Generate native Android project
         run: npx expo prebuild --platform android --clean --no-install
 
-      - name: Configure release signing
-        run: node scripts/configure-android-signing.mjs
-
       - name: Increase Gradle wrapper timeout
         run: sed -i 's/networkTimeout=10000/networkTimeout=120000/' android/gradle/wrapper/gradle-wrapper.properties
 
-      - name: Build release APK
+      - name: Build debug APK
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace \
+          ./gradlew assembleDebug --no-daemon --stacktrace \
             -Pandroid.compileSdkVersion="$ANDROID_COMPILE_SDK" \
             -Pandroid.buildToolsVersion="$ANDROID_BUILD_TOOLS" \
             ${ANDROID_DISABLE_SDK_CHECKS:-}
@@ -113,7 +106,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: canoark-${{ github.run_number }}-${{ github.sha }}
-          path: android/app/build/outputs/apk/release/app-release.apk
+          name: canoark-debug-${{ github.run_number }}-${{ github.sha }}
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 14

@@ -96,9 +96,12 @@ npx expo run:android
 - Nunca subir `.jks`, contraseñas ni `android/` generado.
 
 ## CI
-`.github/workflows/build-apk.yml`: Node22+JDK17+AndroidSDK → `npm ci` → `npx expo prebuild --platform android --clean --no-install` → firma si secretos → `./gradlew assembleRelease --no-daemon` → artifact `app-release.apk`. Sin EAS.
+Sin EAS. Dos workflows con el mismo pipeline base (Node22+JDK17+AndroidSDK → `npm ci` → `npx expo prebuild --platform android --clean --no-install` → gradle):
+- `.github/workflows/build-apk.yml`: push a `main`/tags `v*` + dispatch. `assembleDebug` → artifact `canoark-debug-*` (`app-debug.apk`, 14 días). Pruebas, no publicable.
+- `.github/workflows/release-apk.yml`: **solo** `workflow_dispatch` (input `network`). Exige secretos de firma, `assembleRelease`, verifica con `apksigner` que no sea clave debug y sube `canoark-<red>-v<version>-code<versionCode>-run<N>.apk` (90 días).
 - Vars repo: `ARKADE_NETWORK`, `LNURL_BASE_URL`, `LNURL_DOMAIN`.
 - Secretos firma: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
+- `scripts/configure-android-signing.mjs` con `ANDROID_SIGNING_REQUIRED=1` falla si faltan secretos (evita APK release firmado con debug).
 
 ## Troubleshooting
 | síntoma | acción |

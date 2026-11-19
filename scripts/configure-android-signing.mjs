@@ -15,6 +15,9 @@ import { resolve } from 'node:path';
  *
  * Sin secretos no hace nada: Gradle seguirá firmando con el keystore de debug
  * que genera el SDK. Ese APK sirve para probar, no para publicar.
+ *
+ * Con ANDROID_SIGNING_REQUIRED=1 la falta de secretos es un error: lo usa el
+ * workflow de release para no publicar un APK firmado con la clave de debug.
  */
 
 const buildGradlePath = resolve('android/app/build.gradle');
@@ -36,9 +39,16 @@ const enabled =
   Boolean(storePassword && keyAlias && keyPassword);
 
 if (!enabled) {
-  console.log(
-    'Firma release no configurada: se usará el keystore de debug del SDK.'
-  );
+  const required = process.env.ANDROID_SIGNING_REQUIRED === '1';
+  const message =
+    'Firma release no configurada: faltan ANDROID_KEYSTORE_BASE64 ' +
+    '(o ANDROID_KEYSTORE_PATH), ANDROID_KEYSTORE_PASSWORD, ' +
+    'ANDROID_KEY_ALIAS o ANDROID_KEY_PASSWORD.';
+  if (required) {
+    console.error(message);
+    process.exit(1);
+  }
+  console.log(`${message} Se usará el keystore de debug del SDK.`);
   process.exit(0);
 }
 
