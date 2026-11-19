@@ -112,6 +112,12 @@ npx expo run:android
 | Recepción Lightning pendiente | Reabrir app: cliente swaps restaura registros; sincronizar + esperar. |
 | Lightning Address no emite facturas | Sin SSE activa. Mantener Recibir abierta o usar dirección Arkade offline. |
 
+## Avisos de pago recibido
+- `useWallet` compara el saldo de cada sincronización (`available + boarding`) con el anterior; si sube, publica `receivedPayment` (sats y activos nuevos).
+- `src/components/ReceivedPayment.tsx`, montado en `app/_layout.tsx`, muestra el aviso sobre cualquier pantalla; `dismissReceivedPayment()` lo cierra.
+- Sólo la sincronización más reciente mueve la línea base (`connectSeqRef`) para no contar dos veces el mismo pago; dos recepciones seguidas se acumulan en el mismo aviso.
+- La línea base se conserva al bloquear, así que un pago que llega con la app bloqueada avisa al desbloquear. Se reinicia al crear/restaurar o borrar la wallet.
+
 ## Pantallas
 - `welcome` (nueva/restaurar), `create` (seed+confirm+biometría+passphrase), `restore`, `unlock` (passphrase+biometría).
 - Tabs: Billetera (saldo, Recibir/Enviar), Historial (`wallet.getTransactionHistory()`), Configuración (General/Seguridad/Avanzado, filas expandibles).

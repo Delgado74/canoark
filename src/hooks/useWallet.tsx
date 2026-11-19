@@ -71,6 +71,21 @@ export type SendOutcome =
     }
   | PayResult;
 
+/** Activo que llegó con un pago recibido. */
+export type ReceivedAssetLine = { assetId: string; amount: bigint };
+
+/**
+ * Aviso de fondos entrantes. Se calcula comparando el saldo anterior con el
+ * nuevo, así que sirve igual para Arkade, Lightning y depósitos onchain.
+ */
+export type ReceivedPayment = {
+  /** Sats netos que entraron (BTC); 0 si el pago fue sólo de activos. */
+  sats: number;
+  assets: ReceivedAssetLine[];
+  /** Momento de la detección, en ms. */
+  at: number;
+};
+
 type WalletContextValue = {
   status: WalletStatus;
   busy: boolean;
@@ -165,6 +180,10 @@ type WalletContextValue = {
     nextPassphrase: string,
     useBiometrics: boolean
   ) => Promise<ChangePassphraseResult>;
+  /** Último pago entrante detectado, o `null` si no hay aviso pendiente. */
+  receivedPayment: ReceivedPayment | null;
+  /** Cierra el aviso de pago recibido. */
+  dismissReceivedPayment: () => void;
 };
 
 const WalletContext = createContext<WalletContextValue | null>(null);
@@ -295,6 +314,18 @@ const BALANCE_POLL_MS = 30 * 1000;
 /** Espera tras un aviso de fondos para dejar que el indexer actualice su caché. */
 const INCOMING_DEBOUNCE_MS = 1200;
 
+/** Une los activos de dos avisos consecutivos. */
+function mergeReceivedAssets(
+  a: ReceivedAssetLine[],
+  b: ReceivedAssetLine[]
+): ReceivedAssetLine[] {
+  const merged = new Map(a.map(line => [line.assetId, line.amount] as const));
+  for (const line of b) {
+    merged.set(line.assetId, (merged.get(line.assetId) ?? 0n) + line.amount);
+  }
+  return Array.from(merged, ([assetId, amount]) => ({ assetId, amount }));
+}
+
 export function WalletProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<WalletStatus>('loading');
   const [busy, setBusy] = useState(false);
@@ -312,6 +343,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [biometricAvailable] = useState(() => canUseBiometrics());
   const [walletMode, setWalletModeState] = useState<WalletMode>('static');
   const [cashDustSats, setCashDustSats] = useState(330);
+  const [receivedPayment, setReceivedPayment] =
+    useState<ReceivedPayment | null>(null);
 
   const mnemonicRef = useRef<string | null>(null);
   const walletModeRef = useRef<WalletMode>('static');
@@ -322,6 +355,21 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   );
   const stopIncomingRef = useRef<(() => void) | null>(null);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * Nº de la sincronización en curso. Sólo la más reciente puede mover la línea
+   * base del saldo: si dos `connect()` se solapan, la respuesta más vieja no
+   * debe contar el mismo pago dos veces.
+   */
+  const connectSeqRef = useRef(0);
+  /**
+   * Saldo de la última sincronización. Comparar contra él dice si entró dinero
+   * sin depender del historial (que puede llegar con retraso) ni del tipo de
+   * pago (Arkade, Lightning o depósito onchain).
+   */
+  const baselineRef = useRef<{
+    total: number;
+    assets: Map<string, bigint>;
+  } | null>(null);
 
   useEffect(() => {
     statusRef.current = status;
@@ -357,6 +405,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setSessionReady(false);
     setCashDustSats(330);
     setError(null);
+    setReceivedPayment(null);
   }, []);
 
   const ensureSession = useCallback(async () => {
@@ -385,17 +434,55 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     return next;
   }, [ensureSession]);
 
+  /**
+   * Compara el saldo recién leído con el anterior. Un aumento es dinero que
+   * acaba de entrar: Arkade, Lightning reclamado o depósito onchain. El primer
+   * saldo tras desbloquear sólo fija la línea base, para no avisar de fondos
+   * que ya estaban.
+   */
+  const observeBalance = useCallback((next: BalanceView) => {
+    // `boarding` se suma porque un depósito onchain entra ahí antes de
+    // liquidarse como saldo Arkade; si sólo mirásemos `available` no avisaría.
+    const total = next.available + next.boarding;
+    const assets = new Map(
+      next.assets.map(asset => [asset.assetId, asset.amount] as const)
+    );
+    const previous = baselineRef.current;
+    baselineRef.current = { total, assets };
+    if (!previous) return;
+
+    const deltaSats = total - previous.total;
+    const incomingAssets: ReceivedAssetLine[] = [];
+    for (const [assetId, amount] of assets) {
+      const before = previous.assets.get(assetId) ?? 0n;
+      if (amount > before) incomingAssets.push({ assetId, amount: amount - before });
+    }
+
+    if (deltaSats <= 0 && incomingAssets.length === 0) return;
+
+    setReceivedPayment(current => ({
+      sats: (current?.sats ?? 0) + Math.max(0, deltaSats),
+      assets: current
+        ? mergeReceivedAssets(current.assets, incomingAssets)
+        : incomingAssets,
+      at: Date.now(),
+    }));
+  }, []);
+
   const connect = useCallback(async () => {
+    const seq = ++connectSeqRef.current;
     const session = await ensureSession();
     const [nextAddress, nextBoardingAddress, rawBalance] = await Promise.all([
       session.wallet.getAddress(),
       session.wallet.getBoardingAddress(),
       session.wallet.getBalance(),
     ]);
+    const nextBalance = toBalanceView(rawBalance);
     setAddress(nextAddress);
     setBoardingAddress(nextBoardingAddress);
-    setBalance(toBalanceView(rawBalance));
+    setBalance(nextBalance);
     setCashDustSats(Number(session.wallet.dustAmount));
+    if (seq === connectSeqRef.current) observeBalance(nextBalance);
 
     // El SDK vigila la dirección actual y las históricas. Mostrarlas permite
     // comprobar depósitos enviados a una dirección anterior (p. ej. tras
@@ -425,7 +512,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
 
     setSessionReady(true);
-  }, [ensureSession, loadCoins]);
+  }, [ensureSession, loadCoins, observeBalance]);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -492,6 +579,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         // al firmar preimágenes de swap.
         await closeArkadeSession();
         resetState();
+        // Semilla distinta: el saldo anterior no sirve de referencia.
+        baselineRef.current = null;
         await wipeStorageDatabases();
 
         // El modo se guarda antes de abrir la sesión porque `Wallet.create`
@@ -584,6 +673,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       walletModeRef.current = 'static';
       setWalletModeState('static');
       resetState();
+      baselineRef.current = null;
       setStatus('empty');
       statusRef.current = 'empty';
       setBiometricEnabled(false);
@@ -952,6 +1042,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     applyWalletMode,
     settleBoarding,
     changePassphrase,
+    receivedPayment,
+    dismissReceivedPayment: () => setReceivedPayment(null),
   };
 
   return (

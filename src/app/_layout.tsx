@@ -2,6 +2,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { WalletProvider } from '../hooks/useWallet';
 import { PreferencesProvider } from '../hooks/usePreferences';
+import { ReceivedPayment } from '../components/ReceivedPayment';
 import { colors } from '../constants/theme';
 
 export default function RootLayout() {
@@ -29,6 +30,7 @@ export default function RootLayout() {
           <Stack.Screen name="unlock" />
           <Stack.Screen name="(tabs)" />
         </Stack>
+        <ReceivedPayment />
       </WalletProvider>
     </PreferencesProvider>
   );
