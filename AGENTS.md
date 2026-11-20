@@ -102,6 +102,7 @@ Sin EAS. Dos workflows con el mismo pipeline base (Node22+JDK17+AndroidSDK → `
 - Vars repo: `ARKADE_NETWORK`, `LNURL_BASE_URL`, `LNURL_DOMAIN`.
 - Secretos firma: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
 - `scripts/configure-android-signing.mjs` con `ANDROID_SIGNING_REQUIRED=1` falla si faltan secretos (evita APK release firmado con debug).
+- `app.json` → `expo-build-properties` → `android.buildArchs` = `["arm64-v8a","armeabi-v7a"]`: fuera x86/x86_64 (solo emuladores). No compilar solo arm64: deja fuera móviles 32-bit.
 
 ## Troubleshooting
 | síntoma | acción |
