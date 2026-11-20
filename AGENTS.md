@@ -58,6 +58,9 @@ Fuentes: APIs/términos Arkade → skill + MCP `arkade-docs`. Este archivo → d
 
 ## Lightning Address
 - Env: `EXPO_PUBLIC_LNURL_BASE_URL`, `EXPO_PUBLIC_LNURL_DOMAIN`.
+- **Modos por dominio** (`GET /lnurl/domain` → `allocationModes`): `self` (usuario elige nombre), `random` (servidor asigna), `admin` (reservas/códigos), `session` (sin nombre, LNURL de sesión).
+- mainnet `lnurl.arkade.sh` (dominio visible `arkade.money`) = `random`+`admin`+`session`, **sin `self`**: elegir nombre da `403 forbidden_mode`. Solo se logra con `claimCode` emitido por el operador (Ark Labs, admin privado) o sirviendo un dominio propio.
+- `getLnurlCapabilities()` adapta la UI; `registerLightningAddress` acepta `username?`/`claimCode?` (sin username = nombre aleatorio). `lnurlErrorMessage()` traduce los códigos del servidor.
 - Token con **ECDSA** (no Schnorr; Schnorr aleatorio → token distinto cada arranque): `deriveSessionTokenWithSigner((m,t)=>wallet.identity.signMessage(m,t), domain)`.
 - `registerAddress({token,username,domain})`; `registerArkadeIdentity({token,handle,domain,arkadeAddress,claimPublicKey,boardingAddress})`. `claimPublicKey` = pubkey comprimida 33B hex.
 - `openSession({token}, handlers)` SSE; responder `invoice_request` con factura del solver.

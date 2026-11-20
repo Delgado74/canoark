@@ -14,10 +14,13 @@ import {
 import {
   createLnurlClient,
   deriveSessionTokenWithSigner,
+  LnurlError,
+  type LnurlAddressErrorCode,
   type LnurlSession,
   type RegisteredAddress,
 } from '@arkade-os/lnurl-client';
 import { ACTIVE_NETWORK } from '../../constants/network';
+import { errorMessage } from '../format';
 import { getArkadeSession } from './client';
 import { compressedPublicKeyHex } from './identity';
 import { isLightningAddress, resolveLightningAddress } from './lnurl-pay';
@@ -403,9 +406,14 @@ export async function forgetLnurlSecrets(): Promise<void> {
 }
 
 export async function registerLightningAddress(params: {
-  username: string;
   arkadeAddress: string;
   boardingAddress?: string;
+  /** Nombre elegido por el usuario; el servidor lo asigna al azar si se omite. */
+  username?: string;
+  /** Código de reclamo emitido por el operador del dominio. */
+  claimCode?: string;
+  /** Receptor sin dirección (LNURL de sesión), útil si el dominio no permite nombres. */
+  nameless?: boolean;
 }): Promise<{ token: string; registered: RegisteredAddress }> {
   const config = getLnurlConfig();
   if (!config) {
@@ -418,27 +426,101 @@ export async function registerLightningAddress(params: {
   const client = createLnurlClient({ baseUrl: config.baseUrl });
   const token = await getOrCreateLnurlToken(config.domain);
 
+  const username = params.username?.trim().toLowerCase();
+  const claimCode = params.claimCode?.trim();
+
   const registered = await client.registerAddress({
     token,
-    username: params.username.trim().toLowerCase(),
     domain: config.domain,
+    ...(username ? { username } : {}),
+    ...(claimCode ? { claimCode } : {}),
+    ...(params.nameless && !username && !claimCode ? { nameless: true } : {}),
   });
 
-  const claimPublicKey = await compressedPublicKeyHex(wallet.identity);
-  await client.registerArkadeIdentity({
-    token,
-    handle: registered.handle,
-    domain: registered.domain,
-    arkadeAddress: params.arkadeAddress,
-    claimPublicKey,
-    boardingAddress: params.boardingAddress,
-  });
+  // Sin dirección (nameless) no hay handle LUD-16 que enlazar; el servidor
+  // atiende la sesión por SSE y no admite identidad Arkade offline.
+  if (!registered.nameless) {
+    const claimPublicKey = await compressedPublicKeyHex(wallet.identity);
+    await client.registerArkadeIdentity({
+      token,
+      handle: registered.handle,
+      domain: registered.domain,
+      arkadeAddress: params.arkadeAddress,
+      claimPublicKey,
+      boardingAddress: params.boardingAddress,
+    });
+  }
 
   if (registered.lightningAddress) {
     await saveLightningAddress(registered.lightningAddress);
   }
 
   return { token, registered };
+}
+
+export type LnurlCapabilities = {
+  /** Dominio que se muestra en la dirección (`usuario@dominio`). */
+  domain: string;
+  /** Modos que permite el servidor: self, random, admin, session. */
+  allocationModes: string[];
+  usernameRules: {
+    minLen: number;
+    maxLen: number;
+    pattern: string;
+  };
+};
+
+/**
+ * Qué permite el servidor LNURL activo. En mainnet (`lnurl.arkade.sh`) no
+ * aparece `self`: no se puede elegir nombre, solo aceptar uno aleatorio, usar
+ * un código de reclamo del operador o recibir por sesión.
+ */
+export async function getLnurlCapabilities(): Promise<LnurlCapabilities | null> {
+  const config = getLnurlConfig();
+  if (!config) return null;
+  try {
+    const client = createLnurlClient({ baseUrl: config.baseUrl });
+    const capabilities = await client.domainCapabilities();
+    return {
+      domain: config.domain,
+      allocationModes: capabilities.allocationModes,
+      usernameRules: capabilities.usernameRules,
+    };
+  } catch {
+    // Servidor caído o build antiguo: la pantalla cae al formulario clásico.
+    return null;
+  }
+}
+
+const LNURL_ERROR_MESSAGES: Partial<Record<LnurlAddressErrorCode, string>> = {
+  forbidden_mode:
+    'Este servidor no permite elegir el nombre. Genera una dirección automática o usa un código de reclamo.',
+  invalid_claim: 'El código de reclamo no es válido o ya se usó.',
+  username_required: 'Ese código de reclamo necesita un nombre de usuario.',
+  invalid_username:
+    'Nombre no válido: minúsculas, números, punto, guion o guion bajo.',
+  taken: 'Ese nombre ya está en uso. Prueba con otro.',
+  blacklisted: 'Ese nombre no está permitido en este servidor.',
+  limit_reached: 'Alcanzaste el máximo de direcciones de este servidor.',
+  invalid_token:
+    'La sesión con el servidor LNURL no es válida. Vuelve a intentarlo.',
+  not_found: 'El servidor no encuentra esa dirección.',
+  already_named: 'Esa dirección ya tiene nombre.',
+  invalid_rails: 'El servidor rechazó las opciones de pago de la dirección.',
+};
+
+/** Traduce los códigos del servidor LNURL a algo legible en la app. */
+export function lnurlErrorMessage(error: unknown): string {
+  if (error instanceof LnurlError) {
+    if (error.httpStatus === 429) {
+      return 'Demasiados intentos. Espera un minuto y vuelve a probar.';
+    }
+    const mapped = error.code
+      ? LNURL_ERROR_MESSAGES[error.code as LnurlAddressErrorCode]
+      : undefined;
+    return mapped ?? error.reason ?? error.message;
+  }
+  return errorMessage(error);
 }
 
 export type LightningAddressSessionHandlers = {
