@@ -48,6 +48,7 @@ Fuentes: APIs/términos Arkade → skill + MCP `arkade-docs`. Este archivo → d
 - Lightning Address (`usuario@dominio`): `resolveLightningAddress(address, sats)` (`src/lib/arkade/lnurl-pay.ts`) pide la factura por LNURL-pay y luego `swaps.pay(invoice, {maxFee})`.
 - Onchain: **no usa solver**. `sendCollaborativeExit(wallet, dest, sats, maxFee)` en `src/lib/arkade/offboard.ts` → `wallet.settle({inputs, outputs})`; la salida sale en la commitment transaction. `offboard.ts` decide inputs, fee y cambio.
 - `pay()` → `{kind:'swap',swap}` | `{kind:'payment',txid}`.
+- **Solver**: `discovery` = registro de la red + `localSolverCards()`. El registro de mainnet (`solver-registry/bitcoin.json`) está vacío (`markets: []`, `solvers: []`); el mercado Lightning lo aporta la tarjeta `beta-solver` bundleada en `src/lib/arkade/solver-cards/` (la misma que trae Arkade Wallet). Si Ark Labs rota la pubkey/relay, actualizar ese JSON.
 - `SwapUpdate.outcome`: accepted|funding|funded|open|paid|claimed|refunded|lapsed|failed|needs_recovery.
 - Mantener cliente swaps vivo + `onUpdate()` para claim/refund/estado. Sin pago del solver → refund al vencer `refundLocktime`.
 

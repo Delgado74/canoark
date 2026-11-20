@@ -24,6 +24,7 @@ import {
 import { ACTIVE_NETWORK } from '../../constants/network';
 import { openStorage, type AppStorage } from '../storage/sqlite';
 import { identityFromMnemonic } from './identity';
+import { localSolverCards } from './solverCards';
 import type { WalletMode } from './walletMode';
 
 export type ArkadeSession = {
@@ -390,10 +391,13 @@ export async function openArkadeSession(
     const swaps = createSwapClient({
       wallet: createdWallet,
       repository: storage.swapRepository,
-      // Mismo registro de solvers que usa Arkade Wallet.
+      // Registro de solvers de la red + tarjetas locales. En mainnet el
+      // registro está vacío y el mercado Lightning lo aporta la tarjeta que
+      // viaja con el build.
       discovery: {
         network: ACTIVE_NETWORK.swapNetwork,
         registryUrl: ACTIVE_NETWORK.solverRegistryUrl,
+        localCards: localSolverCards(ACTIVE_NETWORK.swapNetwork),
       },
       corridors: {
         onchain: {
