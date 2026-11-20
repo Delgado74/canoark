@@ -62,7 +62,7 @@ Fuentes: APIs/términos Arkade → skill + MCP `arkade-docs`. Este archivo → d
 - mainnet `lnurl.arkade.sh` (dominio visible `arkade.money`) = `random`+`admin`+`session`, **sin `self`**: elegir nombre da `403 forbidden_mode`. Solo se logra con `claimCode` emitido por el operador (Ark Labs, admin privado) o sirviendo un dominio propio.
 - `getLnurlCapabilities()` adapta la UI; `registerLightningAddress` acepta `username?`/`claimCode?` (sin username = nombre aleatorio). `lnurlErrorMessage()` traduce los códigos del servidor.
 - Token con **ECDSA** (no Schnorr; Schnorr aleatorio → token distinto cada arranque): `deriveSessionTokenWithSigner((m,t)=>wallet.identity.signMessage(m,t), domain)`.
-- `registerAddress({token,username,domain})`; `registerArkadeIdentity({token,handle,domain,arkadeAddress,claimPublicKey,boardingAddress})`. `claimPublicKey` = pubkey comprimida 33B hex.
+- `registerAddress({token,username?,claimCode?,nameless?,domain})`; `registerArkadeIdentity({token,handle,domain,arkadeAddress,claimPublicKey,boardingAddress})`. `claimPublicKey` = pubkey comprimida 33B hex.
 - `openSession({token}, handlers)` SSE; responder `invoice_request` con factura del solver.
 - Al claim: preimagen vía `preimageForSwapRecord(wallet, projection)` desde `profile.hashlock`, verificar contra `paymentHash`, `session.reportSettled(preimage)`. Best-effort; si falla, pago offline por dirección Arkade.
 - SSE solo foreground. App cerrada → servidor LNURL usa dirección Arkade registrada.
