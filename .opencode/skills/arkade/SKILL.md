@@ -166,7 +166,7 @@ const { finalized, pending } = await wallet.finalizePendingTxs()
 ```
 
 - To pay a Lightning invoice, see [Arkade Intents](#arkade-intents-developer-preview).
-- To send to a Bitcoin address (`bc1` or `tb1`), offboard with `Ramps`. On mutinynet, you can also pay it through a solver with the swap client.
+- To send to a Bitcoin address (`bc1` or `tb1`), offboard with `Ramps`. Receiving onchain bitcoin uses a boarding address and `onboard`. Neither native onchain flow requires a solver.
 
 ## Board and Offboard
 
@@ -264,15 +264,15 @@ To build a contract application end to end, install the contract skills from [`a
 
 ## Arkade Intents (Developer Preview)
 
-Arkade Intents lets applications pay and receive over Lightning, pay Bitcoin addresses, and exchange assets. A solver carries each swap across. The swap client in `@arkade-os/swap` finds the solver, checks its quote, funds the swap, and claims or refunds it. Every route follows one flow: intent, quote, fund, fill.
+Arkade Intents lets applications pay and receive over Lightning, pay Bitcoin addresses, and exchange assets through solver-backed swaps. The swap client in `@arkade-os/swap` finds the solver, checks its quote, funds the swap, and claims or refunds it. These Intent routes are separate from native onchain boarding and offboarding, which do not require a solver.
 
 | Route | Status |
 |---|---|
 | Pay a Lightning invoice (`arkade:bitcoin/slip44:0 → bolt11:bitcoin/slip44:0`) | Available for testing on mainnet, with one pinned solver |
 | Receive over Lightning (`bolt11:bitcoin/slip44:0 → arkade:bitcoin/slip44:0`) | Available for testing on mainnet, with one pinned solver |
 | Exchange BTC and assets (`arkade:mutinynet/slip44:1 ↔ arkade:mutinynet/asset:<68 hex>`) | Testing on mutinynet (BTC/USDT) |
-| Pay a Bitcoin address (`arkade:mutinynet/slip44:1 → bitcoin:mutinynet/slip44:1`) | Testing on mutinynet only |
-| Take a deposit from a Bitcoin address (`bitcoin:bitcoin/slip44:0 → arkade:bitcoin/slip44:0`) | Not available |
+| Pay a Bitcoin address through an Intent swap (`arkade:mutinynet/slip44:1 → bitcoin:mutinynet/slip44:1`) | Testing on mutinynet only; native offboarding does not use a solver |
+| Take a deposit from a Bitcoin address through an Intent swap (`bitcoin:bitcoin/slip44:0 → arkade:bitcoin/slip44:0`) | Not available; receive onchain bitcoin natively through boarding, without a solver |
 
 ### Create the Swap Client
 
@@ -295,7 +295,7 @@ await client.ready
 
 - **Keep one client running for the life of the app.** The client claims and refunds swaps only while it runs.
 - The repository stores each swap's secrets. There is no default. In Node, use `SQLiteAssetSwapRepository`, as in [Choose Storage](https://docs.arkadeos.com/intents/build/swap-client#choose-storage).
-- The mainnet registry does not list the Lightning solver yet, so pin its card. [Lightning Payments](https://docs.arkadeos.com/intents/build/lightning#setup) shows the card. Without it, `pay` and `receive` throw `UnsupportedRoute`.
+- The mainnet registry does not list the Lightning solver yet, so pin its card. [Lightning Payments](https://docs.arkadeos.com/intents/build/lightning#setup) shows the card. Without it, Lightning `pay` and `receive` throw `UnsupportedRoute`.
 - For mutinynet routes, create the client with a mutinynet wallet and no pinned card. The client reads the registry for the wallet's network.
 
 ### Pay a Lightning Invoice
