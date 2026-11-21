@@ -5,7 +5,9 @@ Billetera Android de [Arkade](https://docs.arkadeos.com) con Expo, React Native 
 - Pagos instantáneos dentro de Arkade.
 - Envío y recepción de activos Arkade (Arkade Mint) entre billeteras.
 - Pagos Lightning vía solvers: factura BOLT11 o Lightning Address (se resuelve a BOLT11 con LNURL-pay).
-- Envíos onchain por salida colaborativa con el operador (`wallet.settle`) y depósitos onchain por boarding; ninguno usa solver.
+- Envíos a direcciones Bitcoin desde la app por salida colaborativa (`wallet.settle`): el operador participa en la liquidación y no interviene un solver. El destino puede ser cualquier dirección Bitcoin, no solo una dirección propia.
+- Recepción onchain por boarding: se deposita en la dirección de boarding y el operador liquida el depósito; no interviene un solver.
+- Arkade Intents también define pagos onchain dirigidos con solver: el usuario paga desde su saldo Arkade y el solver aporta el BTC onchain que el cliente reclama para el destinatario. Esta ruta está disponible en Mutinynet y es distinta del envío que hoy ofrece la app.
 - Recepción Lightning con factura o Lightning Address (LNURL).
 - Aviso a pantalla completa cuando entra un pago (Arkade, Lightning u onchain).
 - Mnemónica cifrada con Android Keystore; estado en SQLite.
@@ -20,6 +22,8 @@ Billetera Android de [Arkade](https://docs.arkadeos.com) con Expo, React Native 
 | Compilar, firmar, CI, troubleshooting | [`AGENTS.md`](AGENTS.md#build-local-sin-eas) |
 
 Si hay conflicto: doc oficial de Arkade gana para APIs; `AGENTS.md` gana para decisiones del proyecto.
+
+Para distinguir las dos formas de enviar a una dirección Bitcoin, consulta [Pagos onchain en Arkade Intents](https://docs.arkadeos.com/intents/build/onchain.md) y [Boarding y offboarding](https://docs.arkadeos.com/wallets/advanced/boarding.md).
 
 ## Requisitos
 
