@@ -55,7 +55,7 @@ export default function WelcomeScreen() {
         <Bullet
           icon="🌐"
           title="Lightning y onchain"
-          text="Paga facturas Lightning o direcciones onchain mediante los solvers de Arkade."
+          text="Paga facturas Lightning con solvers. Envía bitcoin con una salida colaborativa y recibe depósitos onchain por boarding, sin solver."
         />
       </View>
 
