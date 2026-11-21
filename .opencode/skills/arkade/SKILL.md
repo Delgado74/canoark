@@ -166,7 +166,9 @@ const { finalized, pending } = await wallet.finalizePendingTxs()
 ```
 
 - To pay a Lightning invoice, see [Arkade Intents](#arkade-intents-developer-preview).
-- To send to a Bitcoin address (`bc1` or `tb1`), offboard with `Ramps`. Receiving onchain bitcoin uses a boarding address and `onboard`. Neither native onchain flow requires a solver.
+- To send to a Bitcoin address (`bc1` or `tb1`) without a solver, offboard with `Ramps`. The operator participates in the batch swap, whose commitment transaction pays the destination. The destination can be any Bitcoin address; this is not limited to returning funds to your own wallet.
+- Arkade Intents also provides a separate, solver-backed onchain payment route on mutinynet. The user funds the Arkade side; the solver locks bitcoin onchain, and the client claims it to the recipient's address. Keep the swap client running until the outcome is `claimed`. See [Onchain Payments](https://docs.arkadeos.com/intents/build/onchain.md).
+- To receive bitcoin onchain without a solver, use a boarding address. The deposit settles into an Arkade virtual output; see [Boarding & Offboarding](https://docs.arkadeos.com/wallets/advanced/boarding.md).
 
 ## Board and Offboard
 
@@ -264,15 +266,17 @@ To build a contract application end to end, install the contract skills from [`a
 
 ## Arkade Intents (Developer Preview)
 
-Arkade Intents lets applications pay and receive over Lightning, pay Bitcoin addresses, and exchange assets through solver-backed swaps. The swap client in `@arkade-os/swap` finds the solver, checks its quote, funds the swap, and claims or refunds it. These Intent routes are separate from native onchain boarding and offboarding, which do not require a solver.
+Arkade Intents lets applications pay and receive over Lightning, pay Bitcoin addresses, and exchange assets through solver-backed swaps. The swap client in `@arkade-os/swap` finds the solver, checks its quote, funds the swap, and claims or refunds it. The onchain address-payment route is separate from native boarding and offboarding: the latter use the operator and do not require a solver.
 
 | Route | Status |
 |---|---|
 | Pay a Lightning invoice (`arkade:bitcoin/slip44:0 → bolt11:bitcoin/slip44:0`) | Available for testing on mainnet, with one pinned solver |
 | Receive over Lightning (`bolt11:bitcoin/slip44:0 → arkade:bitcoin/slip44:0`) | Available for testing on mainnet, with one pinned solver |
 | Exchange BTC and assets (`arkade:mutinynet/slip44:1 ↔ arkade:mutinynet/asset:<68 hex>`) | Testing on mutinynet (BTC/USDT) |
-| Pay a Bitcoin address through an Intent swap (`arkade:mutinynet/slip44:1 → bitcoin:mutinynet/slip44:1`) | Testing on mutinynet only; native offboarding does not use a solver |
-| Take a deposit from a Bitcoin address through an Intent swap (`bitcoin:bitcoin/slip44:0 → arkade:bitcoin/slip44:0`) | Not available; receive onchain bitcoin natively through boarding, without a solver |
+| Pay a Bitcoin address through an Intent swap (`arkade:mutinynet/slip44:1 → bitcoin:mutinynet/slip44:1`) | Testing on mutinynet only; solver locks bitcoin onchain and the client claims it to the recipient |
+| Send to a Bitcoin address by native offboarding | Uses the operator's batch swap; no solver; supported separately from Intents |
+| Receive a Bitcoin deposit natively by boarding | Deposit to a boarding address; settles through the operator; no solver |
+| Take a deposit from a Bitcoin address through an Intent swap (`bitcoin:bitcoin/slip44:0 → arkade:bitcoin/slip44:0`) | Not available |
 
 ### Create the Swap Client
 
@@ -357,7 +361,11 @@ const swap = await client.exchange({
 
 ### Pay a Bitcoin Address
 
-On mutinynet:
+On mutinynet, an Intent swap uses a solver to pay a Bitcoin address. This is a payment route, distinct from native offboarding: the user funds the Arkade side of the swap, the solver locks bitcoin onchain, and the client claims that bitcoin to the recipient's address. Keep the client running until the outcome is `claimed`. The onchain claim's miner fee is included in the quote; set a sufficient `maxFee`.
+
+The current CanoArk send screen does not use this Intent route for Bitcoin addresses. It uses `sendCollaborativeExit` and the operator's batch swap instead. That native offboarding path also pays a Bitcoin address, but does not use a solver. To receive onchain bitcoin, use boarding; there is no solver-backed onchain receive route documented here.
+
+Example of the separate Intent route:
 
 ```ts
 import { btcOn } from '@arkade-os/swap'
