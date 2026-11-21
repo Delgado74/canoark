@@ -437,7 +437,7 @@ export default function SendScreen() {
 
         <Card
           title={assetMode ? `Enviar ${assetTicker}` : destinationKindLabel(kind)}
-          subtitle="Revisa estos datos antes de firmar."
+          subtitle="Comprueba destino, importe, red y comisión antes de confirmar."
         >
           <Row label="Destino" value={shorten(parsed.raw || destination, 14, 10)} mono />
           <Row
@@ -484,27 +484,29 @@ export default function SendScreen() {
 
         {assetMode ? (
           <Notice tone="info">
-            El activo se transfiere dentro de Arkade, sin solver. El destinatario
-            lo recibe en su dirección Arkade junto a los sats de portador.
+            Este activo solo se envía a una dirección Arkade. El destinatario
+            necesita la misma red y recibirá también los sats de BTC que
+            acompañan al activo.
           </Notice>
         ) : null}
         {kind === 'lightning' ? (
           <Notice tone="info">
-            Una factura Lightning se paga mediante un swap. El solver recibe el
-            importe de la factura y paga al destino.
+            El solver paga la factura y el swap mueve tus fondos dentro de
+            Arkade. Revisa el importe y el límite de comisión antes de confirmar.
           </Notice>
         ) : null}
         {kind === 'onchain' ? (
           <Notice tone="warning">
-            El pago se hace con una salida colaborativa: el operador incluye tus
-            VTXOs en una ronda de settlement y la commitment transaction paga la
-            dirección de destino. No hay solver ni swap; mantén la app abierta
-            hasta que la ronda cierre.
+            Para esta salida, el operador coordina la liquidación y la
+            transacción de Bitcoin paga la dirección que pegaste. No interviene
+            un solver. Puede tardar más que un envío dentro de Arkade porque
+            requiere liquidación y confirmación en Bitcoin.
           </Notice>
         ) : null}
         {kind === 'arkade' ? (
           <Notice tone="info">
-            Es una transferencia dentro de Arkade: instantánea y sin solver.
+            Este envío va a otra billetera Arkade de la misma red. Se registra
+            dentro de Arkade y no necesita esperar una confirmación de Bitcoin.
           </Notice>
         ) : null}
 
@@ -590,7 +592,9 @@ export default function SendScreen() {
               }
             />
           ) : (
-            <Text style={styles.metaMuted}>Pega o escribe un destino</Text>
+            <Text style={styles.metaMuted}>
+              Pega una factura o dirección; CanoArk detectará el tipo.
+            </Text>
           )}
           <Pressable onPress={paste} style={styles.linkRow}>
             <Text style={styles.link}>Pegar</Text>
@@ -654,13 +658,14 @@ export default function SendScreen() {
       </Card>
 
       <Paragraph muted>
-        Dirección Arkade: {network.addressPrefix}… · onchain:{' '}
+        Pega un destino para que CanoArk adapte los campos. Direcciones Arkade:{' '}
+        {network.addressPrefix}… · Bitcoin onchain:{' '}
         {network.isMainnet ? 'bc1…' : 'tb1…'} · Lightning: lnbc… o
-        usuario@dominio
+        usuario@dominio.
       </Paragraph>
       <Notice tone="warning">
-        Verifica la red antes de enviar. Una dirección de otra red será
-        rechazada o no aparecerá en el explorador.
+        Antes de confirmar, compara el destino y la red con los datos que te dio
+        el destinatario. Una dirección de otra red puede no aceptar el pago.
       </Notice>
     </Screen>
   );

@@ -645,6 +645,14 @@ export default function SwapScreen() {
         <Badge label="Mutinynet" tone="primary" />
       </View>
 
+      {available ? (
+        <Paragraph muted>
+          Elige qué quieres entregar y recibir. CanoArk pedirá una cotización al
+          solver; antes de confirmar, revisa el importe, la tasa y la comisión.
+          La cotización vence en segundos.
+        </Paragraph>
+      ) : null}
+
       {!available ? (
         <Notice tone="danger">
           Los swaps BTC/USD sólo están disponibles en Mutinynet. En mainnet

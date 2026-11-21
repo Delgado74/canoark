@@ -116,12 +116,14 @@ export default function AssetScreen() {
       <CopyField label="ID del activo" value={assetId} />
 
       <Notice tone="info">
-        Los activos se envían y se reciben en una dirección Arkade. Para
-        recibirlos, comparte tu dirección y este ID con quien te los envía.
+        Para recibir este activo, comparte tu dirección Arkade y el ID del
+        activo. No hay una dirección distinta para cada activo; ambos deben
+        usar la misma red.
       </Notice>
       <Paragraph muted>
-        Cada activo viaja dentro de un VTXO con unos sats de portador en BTC.
-        Esos sats también son tuyos y se gastan junto al activo.
+        El activo viaja junto a una pequeña cantidad de BTC que requiere el
+        operador. Esos sats se transfieren con el activo; no son una comisión
+        aparte.
       </Paragraph>
     </Screen>
   );

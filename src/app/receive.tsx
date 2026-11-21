@@ -311,6 +311,14 @@ export default function ReceiveScreen() {
 
       {localError ? <ErrorBanner message={localError} /> : null}
 
+      {tab === 'arkade' && !assetId ? (
+        <Notice tone="info">
+          Comparte esta dirección con otra billetera Arkade de la misma red.
+          El pago llega dentro de Arkade, sin esperar una confirmación de
+          Bitcoin.
+        </Notice>
+      ) : null}
+
       {tab === 'lightning' ? (
         <Card>
           {lnurlAddress ? (
@@ -337,6 +345,15 @@ export default function ReceiveScreen() {
             onPress={requestInvoice}
             loading={invoiceBusy}
           />
+          {!invoice ? (
+            <Notice tone="info">
+              {lnurlAddress
+                ? 'Puedes generar una factura para un importe concreto o compartir tu Lightning Address. Las facturas requieren que CanoArk permanezca abierta; con tu dirección, los pagos pueden llegar a tu saldo Arkade incluso si la app está cerrada.'
+                : lnurlConfig
+                  ? 'Indica cuánto quieres recibir, genera la factura y comparte el QR o el código. Mantén CanoArk abierta para completar la recepción. También puedes configurar una Lightning Address en Configuración.'
+                  : 'Indica cuánto quieres recibir, genera la factura y comparte el QR o el código. Mantén CanoArk abierta para completar la recepción; en esta compilación no hay Lightning Address configurada.'}
+            </Notice>
+          ) : null}
           {invoice ? (
             <Text style={styles.status}>
               {outcomeLabel(invoice.outcome)} · {formatSats(invoice.sats)} sats
@@ -351,13 +368,6 @@ export default function ReceiveScreen() {
               </Paragraph>
             </Card>
           ) : null}
-          {!invoice && !lnurlAddress ? (
-            <Notice tone="info">
-              {lnurlConfig
-                ? 'También puedes configurar una Lightning Address en Configuración → Dirección Lightning.'
-                : 'Sin servidor LNURL configurado. Las facturas funcionan mientras la app esté abierta.'}
-            </Notice>
-          ) : null}
         </Card>
       ) : null}
 
@@ -367,9 +377,9 @@ export default function ReceiveScreen() {
           subtitle="El activo llega a tu dirección Arkade."
         >
           <Paragraph>
-            Comparte tu dirección Arkade con quien te envía el activo. El envío
-            viaja dentro de Arkade, así que también necesita este ID para no
-            confundirlo con otro activo.
+            Comparte tu dirección Arkade y el ID del activo. La dirección
+            recibe dentro de Arkade; el ID le indica al remitente exactamente
+            cuál activo enviarte.
           </Paragraph>
           <CopyField label="ID del activo" value={assetId} />
         </Card>
@@ -395,8 +405,10 @@ export default function ReceiveScreen() {
             {tab === 'onchain' ? (
               <>
                 <Notice tone="warning">
-                  Envía solo bitcoin onchain de {network.label}. Los depósitos
-                  tardan en confirmar y luego se liquidan como saldo Arkade.
+                  Esta es una dirección para depositar bitcoin onchain en tu
+                  billetera. Usa solo {network.label}; después de las
+                  confirmaciones y la liquidación, el importe aparecerá en tu
+                  saldo Arkade. No necesitas un solver.
                 </Notice>
                 {addressNetworkWarning(boardingAddress ?? '', network) ? (
                   <Notice tone="danger">
@@ -439,7 +451,7 @@ export default function ReceiveScreen() {
       {tab === 'onchain' && boardingAddress ? (
         <Card
           title="Comprobar depósito"
-          subtitle="Consulta Esplora directamente, sin esperar al SDK."
+          subtitle="Consulta la cadena directamente. Ver una transacción aquí no significa que ya esté disponible en tu saldo Arkade."
         >
           <Row label="Red activa" value={network.label} />
           <Row label="Dirección actual" value={boardingAddress} mono />
@@ -546,11 +558,11 @@ export default function ReceiveScreen() {
           />
 
           <Notice tone="info">
-            La dirección de boarding es Taproot ({network.isMainnet ? 'bc1p' : 'tb1p'}…).
-            Algunos monederos y exchanges no permiten enviar a Taproot en redes
-            de prueba: en ese caso la transacción nunca se transmite y no
-            aparecerá ni en mutinynet.com ni aquí. Si la transacción aparece en
-            el explorador pero no en esta pantalla, pulsa «Comprobar de nuevo».
+            Esta dirección usa Taproot (
+            {network.isMainnet ? 'bc1p' : 'tb1p'}…). Algunos monederos o
+            exchanges no permiten enviar a direcciones Taproot de redes de
+            prueba. Si el depósito ya aparece en el explorador pero no aquí,
+            pulsa «Comprobar de nuevo».
           </Notice>
         </Card>
       ) : null}

@@ -44,18 +44,18 @@ export default function WelcomeScreen() {
       <View style={styles.bullets}>
         <Bullet
           icon="⚡"
-          title="Pagos instantáneos"
-          text="Envía y recibe dentro de Arkade sin esperar confirmaciones de bloque."
+          title="Pagos dentro de Arkade"
+          text="Al enviar a una dirección Arkade, el destinatario puede recibir sin esperar confirmaciones de Bitcoin."
         />
         <Bullet
           icon="🔑"
           title="Tus llaves, tu billetera"
-          text="La frase de recuperación se cifra en el dispositivo y nunca se envía a un servidor."
+          text="CanoArk cifra la frase de recuperación en este dispositivo. Guárdala fuera del teléfono y nunca la compartas."
         />
         <Bullet
           icon="🌐"
           title="Lightning y onchain"
-          text="Paga facturas Lightning con solvers. Envía bitcoin con una salida colaborativa y recibe depósitos onchain por boarding, sin solver."
+          text="Paga facturas Lightning con solvers. Para enviar bitcoin onchain, CanoArk coordina una salida con el operador; para recibirlo, usa tu dirección de depósito."
         />
       </View>
 
