@@ -7,7 +7,7 @@ import {
   type Swap,
 } from '@arkade-os/swap';
 import { ACTIVE_NETWORK } from '../../constants/network';
-import { cacheAssetInfo } from './assetInfo';
+import { bareAssetId, cacheAssetInfo } from './assetInfo';
 import { getArkadeSession } from './client';
 
 /**
@@ -92,7 +92,7 @@ const tickerOf = (label: string): string =>
     .replace(/[^a-zA-Z]/g, '')
     .toUpperCase();
 
-const usdTickerOf = (market: Market, index: 0 | 1): string | null => {
+const usdTickerFromPair = (market: Market, index: 0 | 1): string | null => {
   const side = market.pair.split('/')[index] ?? '';
   const ticker = tickerOf(side);
   if (USD_TICKERS.has(ticker)) return ticker;
@@ -103,9 +103,36 @@ const usdTickerOf = (market: Market, index: 0 | 1): string | null => {
   return null;
 };
 
+async function usdTickerOf(
+  market: Market,
+  index: 0 | 1
+): Promise<string | null> {
+  const pairTicker = usdTickerFromPair(market, index);
+  if (pairTicker) return pairTicker;
+
+  const asset = market.legs[index].asset;
+  if (!asset) return null;
+
+  try {
+    const { wallet } = getArkadeSession();
+    const details = await wallet.assetManager.getAssetDetails(
+      bareAssetId(asset)
+    );
+    const ticker =
+      typeof details.metadata?.ticker === 'string'
+        ? details.metadata.ticker.trim().toUpperCase()
+        : '';
+    return isUsdAssetTicker(ticker) ? ticker : null;
+  } catch {
+    // The pair label remains the fallback when the indexer has no asset metadata.
+    return null;
+  }
+}
+
 /**
  * Mercados publicados con una pata BTC y otra stablecoin USD. La pata no-BTC y
- * su ticker salen del `pair` de la tarjeta; no se inventan identificadores.
+ * su ticker salen del `pair` o de los metadatos del activo cuando el registro
+ * usa un identificador opaco como `BTC/f121ac9b`.
  */
 export async function findBtcUsdMarkets(): Promise<BtcUsdMarket[]> {
   const { swaps } = getArkadeSession();
@@ -123,7 +150,7 @@ export async function findBtcUsdMarkets(): Promise<BtcUsdMarket[]> {
     const usdLeg = market.legs[usdIndex];
     if (!usdLeg.asset || isBtcAsset(usdLeg.asset)) continue;
 
-    const usdTicker = usdTickerOf(market, usdIndex);
+    const usdTicker = await usdTickerOf(market, usdIndex);
     if (!usdTicker) continue;
 
     // Deja el activo descrito para el saldo y el historial: el registro publica
