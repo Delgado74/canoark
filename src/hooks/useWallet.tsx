@@ -12,6 +12,7 @@ import type { PayResult } from '@arkade-os/swap';
 import {
   ArkAddress,
   ArkNote,
+  ArkadeCashCreateError,
   Estimator,
   VtxoScript,
   hasBoardingTxExpired,
@@ -50,6 +51,13 @@ import {
 } from '../lib/arkade/lightning';
 import { sendCollaborativeExit } from '../lib/arkade/offboard';
 import { bareAssetId } from '../lib/arkade/assetInfo';
+import {
+  CashPersistenceError,
+  deleteCashToken,
+  listCashTokens,
+  saveCashToken,
+  type CashRecord,
+} from '../lib/arkade/cashStore';
 import { wipeStorageDatabases } from '../lib/storage/sqlite';
 import {
   clearWalletMode,
@@ -162,6 +170,10 @@ type WalletContextValue = {
    * (`arkadecash1…` / `tarkadecash1…`). Quien lo tenga puede reclamarlo.
    */
   createCash: (amountSats: number) => Promise<string>;
+  /** Lista los ArkadeCash guardados, también disponible sin conexión. */
+  listCash: () => Promise<CashRecord[]>;
+  /** Elimina del dispositivo un token guardado; no mueve sus fondos. */
+  deleteCash: (id: string) => Promise<void>;
   /**
    * Reclama un ArkadeCash: barre lo gastable al saldo y devuelve lo que quedó
    * en recuperación o sin reclamar.
@@ -802,18 +814,39 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           `El importe debe ser un número entero de sats igual o mayor que ${dust}.`
         );
       }
+      let cash: string;
       try {
-        const cash = await session.wallet.createCash(amountSats);
-        await refresh();
-        return cash;
+        cash = await session.wallet.createCash(amountSats);
       } catch (error) {
-        // Si el envío falló después de enviarse, `ArkadeCashCreateError` lleva
-        // el token con el que se recuperan los fondos. La pantalla lo muestra.
+        if (error instanceof ArkadeCashCreateError) {
+          try {
+            await saveCashToken(error.cash, amountSats, true);
+          } catch (storageError) {
+            await refresh().catch(() => undefined);
+            throw new CashPersistenceError(error.cash, storageError);
+          }
+        }
         await refresh().catch(() => undefined);
         throw error;
       }
+
+      try {
+        await saveCashToken(cash, amountSats);
+      } catch (error) {
+        await refresh().catch(() => undefined);
+        throw new CashPersistenceError(cash, error);
+      }
+      await refresh();
+      return cash;
     },
     [ensureSession, refresh]
+  );
+
+  const listCash = useCallback(() => listCashTokens(), []);
+
+  const deleteCash = useCallback(
+    (id: string) => deleteCashToken(id),
+    []
   );
 
   const claimCash = useCallback(
@@ -1038,6 +1071,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     redeemNotes,
     cashDustSats,
     createCash,
+    listCash,
+    deleteCash,
     claimCash,
     applyWalletMode,
     settleBoarding,

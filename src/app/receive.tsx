@@ -270,17 +270,9 @@ export default function ReceiveScreen() {
   };
 
   const addFunds = () => {
-    if (tab === 'onchain') {
-      Alert.alert(
-        'Añadir fondos onchain',
-        `Envía bitcoin desde otra billetera a esta dirección. Los fondos aparecerán como boarding y se convertirán en saldo Arkade al liquidarse.`
-      );
-      return;
-    }
-    setTab('onchain');
     Alert.alert(
-      'Añadir fondos',
-      'Usa la pestaña ONCHAIN para depositar bitcoin desde otra billetera.'
+      'Añadir fondos onchain',
+      'Envía bitcoin desde otra billetera a esta dirección. Los fondos aparecerán como boarding y se convertirán en saldo Arkade al liquidarse.'
     );
   };
 
@@ -433,7 +425,9 @@ export default function ReceiveScreen() {
             />
           </View>
         </View>
-        <Button title="Añadir fondos" onPress={addFunds} />
+        {tab === 'onchain' ? (
+          <Button title="Añadir fondos" onPress={addFunds} />
+        ) : null}
       </Card>
 
       {tab === 'onchain' && boardingAddress ? (

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import {
@@ -28,6 +28,10 @@ import {
   parseDestination,
   type ParsedDestinationKind,
 } from '../lib/bip21';
+import {
+  arkadeExplorerTxUrl,
+  onchainExplorerTxUrl,
+} from '../lib/arkade/onchain';
 import { errorMessage, formatSats, satsFromInput, shorten } from '../lib/format';
 
 type Stage = 'form' | 'confirm' | 'success';
@@ -85,8 +89,14 @@ function describeError(error: unknown): string {
 }
 
 export default function SendScreen() {
-  const { sendPayment, sendAsset, watchOutcome, balance, refresh, network } =
-    useWallet();
+  const {
+    sendPayment,
+    sendAsset,
+    watchOutcome,
+    balance,
+    refresh,
+    network,
+  } = useWallet();
   const { formatBitcoin } = usePreferences();
   const params = useLocalSearchParams<{ assetId?: string }>();
   const assetId =
@@ -382,6 +392,19 @@ export default function SendScreen() {
           <Row
             label="Comisión de la salida"
             value={`${formatSats(result.feeSats)} sats`}
+          />
+        ) : null}
+        {result.kind === 'arkade' || result.kind === 'onchain' ? (
+          <Button
+            title="Ver transacción en el explorador"
+            variant="secondary"
+            onPress={() => {
+              const url =
+                result.kind === 'onchain'
+                  ? onchainExplorerTxUrl(result.txid, network)
+                  : arkadeExplorerTxUrl(result.txid, network);
+              void Linking.openURL(url);
+            }}
           />
         ) : null}
 

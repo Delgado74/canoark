@@ -155,6 +155,24 @@ export function onchainExplorerAddressUrl(
   return `${network.onchainExplorerUrl.replace(/\/+$/, '')}/address/${address}`;
 }
 
+export function onchainExplorerTxUrl(
+  txid: string,
+  network: NetworkConfig = ACTIVE_NETWORK
+): string {
+  return `${network.onchainExplorerUrl.replace(/\/+$/, '')}/tx/${encodeURIComponent(
+    txid
+  )}`;
+}
+
+export function arkadeExplorerTxUrl(
+  txid: string,
+  network: NetworkConfig = ACTIVE_NETWORK
+): string {
+  return `${network.explorerUrl.replace(/\/+$/, '')}/tx/${encodeURIComponent(
+    txid
+  )}`;
+}
+
 export function esploraAddressUrl(
   address: string,
   network: NetworkConfig = ACTIVE_NETWORK

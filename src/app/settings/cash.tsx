@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import {
   ArkadeCash,
@@ -23,6 +23,10 @@ import { SettingsScreen } from '../../components/SettingsScreen';
 import { colors, spacing } from '../../constants/theme';
 import { useWallet } from '../../hooks/useWallet';
 import { errorMessage, formatSats, satsFromInput, shorten } from '../../lib/format';
+import {
+  CashPersistenceError,
+  type CashRecord,
+} from '../../lib/arkade/cashStore';
 
 type Mode = 'create' | 'claim';
 
@@ -72,6 +76,8 @@ export default function CashSettingsScreen() {
   const {
     createCash,
     claimCash,
+    listCash,
+    deleteCash,
     cashDustSats,
     balance,
     network,
@@ -91,6 +97,25 @@ export default function CashSettingsScreen() {
   const [created, setCreated] = useState<string | null>(null);
   const [pendingCash, setPendingCash] = useState<string | null>(null);
   const [createWarning, setCreateWarning] = useState<string | null>(null);
+  const [cashRecords, setCashRecords] = useState<CashRecord[]>([]);
+  const [cashStoreError, setCashStoreError] = useState<string | null>(null);
+  const [cashStoreLoading, setCashStoreLoading] = useState(true);
+
+  const reloadCash = useCallback(async () => {
+    setCashStoreLoading(true);
+    try {
+      setCashRecords(await listCash());
+      setCashStoreError(null);
+    } catch (error) {
+      setCashStoreError(errorMessage(error));
+    } finally {
+      setCashStoreLoading(false);
+    }
+  }, [listCash]);
+
+  useEffect(() => {
+    void reloadCash();
+  }, [reloadCash]);
 
   const amountSats = satsFromInput(amount);
   const expectedHrp = network.isMainnet ? 'arkadecash' : 'tarkadecash';
@@ -133,8 +158,15 @@ export default function CashSettingsScreen() {
     try {
       const cash = await createCash(amountSats);
       setCreated(cash);
+      await reloadCash();
     } catch (error) {
-      if (error instanceof ArkadeCashCreateError) {
+      await reloadCash();
+      if (error instanceof CashPersistenceError) {
+        setPendingCash(error.cash);
+        setCreateWarning(
+          `${error.message} Comparte o copia este token ahora; no quedó guardado.`
+        );
+      } else if (error instanceof ArkadeCashCreateError) {
         setPendingCash(error.cash);
         setCreateWarning(
           'El envío pudo completarse pero falló la confirmación. Conserva este token: puedes reclamarlo tú mismo o entregarlo.'
@@ -355,6 +387,12 @@ export default function CashSettingsScreen() {
                   }}
                 />
               ) : null}
+              {pendingCash && createWarning?.includes('no quedó guardado') ? (
+                <Notice tone="danger">
+                  El token solo está disponible en esta pantalla. Cópialo o
+                  compártelo antes de salir.
+                </Notice>
+              ) : null}
             </Card>
           ) : null}
 
@@ -478,6 +516,80 @@ export default function CashSettingsScreen() {
             intenta recuperarlo, pero no está garantizado.
           </Notice>
         </>
+      )}
+
+      <SectionLabel>ARKADE CASH GUARDADOS</SectionLabel>
+      {cashStoreError ? <ErrorBanner message={cashStoreError} /> : null}
+      {cashStoreLoading ? (
+        <Paragraph muted>Cargando tokens guardados…</Paragraph>
+      ) : cashRecords.length === 0 ? (
+        <Card>
+          <Paragraph muted>
+            Los ArkadeCash que crees aparecerán aquí para compartirlos después,
+            incluso sin conexión.
+          </Paragraph>
+        </Card>
+      ) : (
+        cashRecords.map(record => (
+          <Card
+            key={record.id}
+            title={record.pending ? 'ArkadeCash pendiente' : 'ArkadeCash'}
+            subtitle={`${formatSats(record.amountSats)} sats · ${new Date(
+              record.createdAt
+            ).toLocaleString('es-ES')}`}
+          >
+            <CopyField
+              label="Token bearer"
+              value={record.cash}
+              displayValue={shorten(record.cash, 24, 18)}
+            />
+            {record.pending ? (
+              <Notice tone="warning">
+                El token puede recuperar los fondos aunque la confirmación del
+                envío original haya fallado.
+              </Notice>
+            ) : null}
+            <View style={styles.inlineButtons}>
+              <Button
+                title="Compartir"
+                variant="secondary"
+                onPress={() => void shareCash(record.cash)}
+              />
+              <Button
+                title="Reclamar"
+                variant="ghost"
+                onPress={() => {
+                  setCashInput(record.cash);
+                  setMode('claim');
+                }}
+              />
+            </View>
+            <Button
+              title="Eliminar del dispositivo"
+              variant="danger"
+              onPress={() =>
+                Alert.alert(
+                  'Eliminar ArkadeCash',
+                  'Esto solo borra la copia guardada en CanoArk; no recupera los fondos ni invalida otras copias del token.',
+                  [
+                    { text: 'Cancelar', style: 'cancel' },
+                    {
+                      text: 'Eliminar',
+                      style: 'destructive',
+                      onPress: () => {
+                        void deleteCash(record.id)
+                          .then(reloadCash)
+                          .catch(error =>
+                            setCashStoreError(errorMessage(error))
+                          );
+                      },
+                    },
+                  ]
+                )
+              }
+            />
+          </Card>
+        ))
       )}
 
       <Card title="Cómo funciona" tone="alt">
