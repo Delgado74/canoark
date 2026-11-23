@@ -24,7 +24,7 @@ import {
 import { ACTIVE_NETWORK } from '../../constants/network';
 import { openStorage, type AppStorage } from '../storage/sqlite';
 import { identityFromMnemonic } from './identity';
-import { localSolverCards } from './solverCards';
+import { solverDiscoveryOptions } from './solverDiscovery';
 import type { WalletMode } from './walletMode';
 
 export type ArkadeSession = {
@@ -391,14 +391,9 @@ export async function openArkadeSession(
     const swaps = createSwapClient({
       wallet: createdWallet,
       repository: storage.swapRepository,
-      // Registro de solvers de la red + tarjetas locales. En mainnet el
-      // registro está vacío y el mercado Lightning lo aporta la tarjeta que
-      // viaja con el build.
-      discovery: {
-        network: ACTIVE_NETWORK.swapNetwork,
-        registryUrl: ACTIVE_NETWORK.solverRegistryUrl,
-        localCards: localSolverCards(ACTIVE_NETWORK.swapNetwork),
-      },
+      // Registro de solvers, tarjetas publicadas por Nostr y tarjetas locales.
+      // En mainnet el registro está vacío y Lightning lo aporta la tarjeta del build.
+      discovery: solverDiscoveryOptions(ACTIVE_NETWORK),
       corridors: {
         onchain: {
           // Sin esta fuente de cadena el drive no puede ver el HTLC ni

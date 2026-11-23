@@ -6,9 +6,11 @@ import {
   type Quote,
   type Swap,
 } from '@arkade-os/swap';
+import { discoverMarkets } from '@arkade-os/swap/protocol';
 import { ACTIVE_NETWORK } from '../../constants/network';
 import { bareAssetId, cacheAssetInfo } from './assetInfo';
 import { getArkadeSession } from './client';
+import { solverDiscoveryOptions } from './solverDiscovery';
 
 /**
  * Swaps BTC ↔ stablecoin USD sobre Arkade.
@@ -105,8 +107,12 @@ const usdTickerFromPair = (market: Market, index: 0 | 1): string | null => {
 
 async function usdTickerOf(
   market: Market,
-  index: 0 | 1
+  index: 0 | 1,
+  discoveredTicker?: string
 ): Promise<string | null> {
+  const ticker = discoveredTicker?.trim().toUpperCase();
+  if (ticker && isUsdAssetTicker(ticker)) return ticker;
+
   const pairTicker = usdTickerFromPair(market, index);
   if (pairTicker) return pairTicker;
 
@@ -131,11 +137,16 @@ async function usdTickerOf(
 
 /**
  * Mercados publicados con una pata BTC y otra stablecoin USD. La pata no-BTC y
- * su ticker salen del `pair` o de los metadatos del activo cuando el registro
- * usa un identificador opaco como `BTC/f121ac9b`.
+ * su ticker sale de la tarjeta descubierta, el `pair` o los metadatos del
+ * activo cuando el registro usa un identificador opaco como `BTC/f121ac9b`.
  */
 export async function findBtcUsdMarkets(): Promise<BtcUsdMarket[]> {
-  const { swaps } = getArkadeSession();
+  const { swaps, storage } = getArkadeSession();
+  const discovered = await discoverMarkets({
+    ...solverDiscoveryOptions(ACTIVE_NETWORK),
+    repository: storage.swapRepository,
+    useCache: false,
+  });
   const markets = await swaps.markets();
 
   const found: BtcUsdMarket[] = [];
@@ -150,7 +161,16 @@ export async function findBtcUsdMarkets(): Promise<BtcUsdMarket[]> {
     const usdLeg = market.legs[usdIndex];
     if (!usdLeg.asset || isBtcAsset(usdLeg.asset)) continue;
 
-    const usdTicker = await usdTickerOf(market, usdIndex);
+    const solverCard = discovered.find(
+      card =>
+        card.pair === market.pair &&
+        card.solver === market.solver
+    );
+    const discoveredTicker =
+      usdIndex === 0
+        ? solverCard?.base_asset.ticker
+        : solverCard?.quote_asset.ticker;
+    const usdTicker = await usdTickerOf(market, usdIndex, discoveredTicker);
     if (!usdTicker) continue;
 
     // Deja el activo descrito para el saldo y el historial: el registro publica
