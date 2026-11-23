@@ -10,6 +10,7 @@ import { discoverMarkets } from '@arkade-os/swap/protocol';
 import { ACTIVE_NETWORK } from '../../constants/network';
 import { bareAssetId, cacheAssetInfo } from './assetInfo';
 import { getArkadeSession } from './client';
+import { setPreferredSwapMarket } from './marketSelection';
 import { solverDiscoveryOptions } from './solverDiscovery';
 
 /**
@@ -191,9 +192,27 @@ export async function findBtcUsdMarkets(): Promise<BtcUsdMarket[]> {
     });
   }
 
+  /*
+   * Varias tarjetas pueden publicar el mismo par de activos con distinto
+   * solver (en Mutinynet, `ln-solver-mutinynet` y `frenchman` comparten el
+   * USDT). Para el usuario es un único mercado: se conserva el de precio, que
+   * es el que cotiza sin rendezvous y responde de verdad. Si no hay mercado de
+   * precio, queda el primero que publique el registro.
+   */
+  const byPair = new Map<string, BtcUsdMarket>();
+  for (const entry of found) {
+    const pairKey = `${entry.market.legs[entry.btcIndex].asset ?? 'btc'}|${
+      entry.market.legs[entry.usdIndex].asset ?? entry.usdTicker
+    }`;
+    const current = byPair.get(pairKey);
+    const currentFeed = current?.market.backend === 'feed';
+    const entryFeed = entry.market.backend === 'feed';
+    if (!current || (entryFeed && !currentFeed)) byPair.set(pairKey, entry);
+  }
+
   // Los mercados de precio (sin rendezvous RFQ) cotizan sin abrir un canal con
   // el solver; se prefieren sobre los RFQ para un swap puntual.
-  return found.sort((a, b) => {
+  return [...byPair.values()].sort((a, b) => {
     const feed =
       Number(a.market.backend === 'feed') -
       Number(b.market.backend === 'feed');
@@ -320,6 +339,11 @@ export async function quoteBtcUsd(
       );
     }
   }
+
+  // El cliente no acepta un mercado en `quote()`, así que la tarjeta elegida
+  // se fija en la política antes de pedir la cotización. Sin esto, ambas
+  // tarjetas del mismo par compiten y puede ganar la RFQ.
+  setPreferredSwapMarket(market.market);
 
   return swaps.quote({
     give: give.asset,
