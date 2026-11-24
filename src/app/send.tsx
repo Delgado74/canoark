@@ -90,8 +90,14 @@ function describeError(error: unknown): string {
 }
 
 export default function SendScreen() {
-  const { sendPayment, sendAsset, watchOutcome, balance, refresh, network } =
-    useWallet();
+  const {
+    sendPayment,
+    sendAsset,
+    watchOutcome,
+    balance,
+    refresh,
+    network,
+  } = useWallet();
   const { formatBitcoin } = usePreferences();
   const params = useLocalSearchParams<{ assetId?: string }>();
   const assetId =

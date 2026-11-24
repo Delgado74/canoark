@@ -6,9 +6,12 @@ import {
   type Quote,
   type Swap,
 } from '@arkade-os/swap';
+import { discoverMarkets } from '@arkade-os/swap/protocol';
 import { ACTIVE_NETWORK } from '../../constants/network';
-import { cacheAssetInfo } from './assetInfo';
+import { bareAssetId, cacheAssetInfo } from './assetInfo';
 import { getArkadeSession } from './client';
+import { setPreferredSwapMarket } from './marketSelection';
+import { solverDiscoveryOptions } from './solverDiscovery';
 
 /**
  * Swaps BTC ↔ stablecoin USD sobre Arkade.
@@ -92,7 +95,7 @@ const tickerOf = (label: string): string =>
     .replace(/[^a-zA-Z]/g, '')
     .toUpperCase();
 
-const usdTickerOf = (market: Market, index: 0 | 1): string | null => {
+const usdTickerFromPair = (market: Market, index: 0 | 1): string | null => {
   const side = market.pair.split('/')[index] ?? '';
   const ticker = tickerOf(side);
   if (USD_TICKERS.has(ticker)) return ticker;
@@ -103,12 +106,48 @@ const usdTickerOf = (market: Market, index: 0 | 1): string | null => {
   return null;
 };
 
+async function usdTickerOf(
+  market: Market,
+  index: 0 | 1,
+  discoveredTicker?: string
+): Promise<string | null> {
+  const ticker = discoveredTicker?.trim().toUpperCase();
+  if (ticker && isUsdAssetTicker(ticker)) return ticker;
+
+  const pairTicker = usdTickerFromPair(market, index);
+  if (pairTicker) return pairTicker;
+
+  const asset = market.legs[index].asset;
+  if (!asset) return null;
+
+  try {
+    const { wallet } = getArkadeSession();
+    const details = await wallet.assetManager.getAssetDetails(
+      bareAssetId(asset)
+    );
+    const ticker =
+      typeof details.metadata?.ticker === 'string'
+        ? details.metadata.ticker.trim().toUpperCase()
+        : '';
+    return isUsdAssetTicker(ticker) ? ticker : null;
+  } catch {
+    // The pair label remains the fallback when the indexer has no asset metadata.
+    return null;
+  }
+}
+
 /**
  * Mercados publicados con una pata BTC y otra stablecoin USD. La pata no-BTC y
- * su ticker salen del `pair` de la tarjeta; no se inventan identificadores.
+ * su ticker sale de la tarjeta descubierta, el `pair` o los metadatos del
+ * activo cuando el registro usa un identificador opaco como `BTC/f121ac9b`.
  */
 export async function findBtcUsdMarkets(): Promise<BtcUsdMarket[]> {
-  const { swaps } = getArkadeSession();
+  const { swaps, storage } = getArkadeSession();
+  const discovered = await discoverMarkets({
+    ...solverDiscoveryOptions(ACTIVE_NETWORK),
+    repository: storage.swapRepository,
+    useCache: false,
+  });
   const markets = await swaps.markets();
 
   const found: BtcUsdMarket[] = [];
@@ -123,7 +162,16 @@ export async function findBtcUsdMarkets(): Promise<BtcUsdMarket[]> {
     const usdLeg = market.legs[usdIndex];
     if (!usdLeg.asset || isBtcAsset(usdLeg.asset)) continue;
 
-    const usdTicker = usdTickerOf(market, usdIndex);
+    const solverCard = discovered.find(
+      card =>
+        card.pair === market.pair &&
+        card.solver === market.solver
+    );
+    const discoveredTicker =
+      usdIndex === 0
+        ? solverCard?.base_asset.ticker
+        : solverCard?.quote_asset.ticker;
+    const usdTicker = await usdTickerOf(market, usdIndex, discoveredTicker);
     if (!usdTicker) continue;
 
     // Deja el activo descrito para el saldo y el historial: el registro publica
@@ -144,9 +192,27 @@ export async function findBtcUsdMarkets(): Promise<BtcUsdMarket[]> {
     });
   }
 
+  /*
+   * Varias tarjetas pueden publicar el mismo par de activos con distinto
+   * solver (en Mutinynet, `ln-solver-mutinynet` y `frenchman` comparten el
+   * USDT). Para el usuario es un único mercado: se conserva el de precio, que
+   * es el que cotiza sin rendezvous y responde de verdad. Si no hay mercado de
+   * precio, queda el primero que publique el registro.
+   */
+  const byPair = new Map<string, BtcUsdMarket>();
+  for (const entry of found) {
+    const pairKey = `${entry.market.legs[entry.btcIndex].asset ?? 'btc'}|${
+      entry.market.legs[entry.usdIndex].asset ?? entry.usdTicker
+    }`;
+    const current = byPair.get(pairKey);
+    const currentFeed = current?.market.backend === 'feed';
+    const entryFeed = entry.market.backend === 'feed';
+    if (!current || (entryFeed && !currentFeed)) byPair.set(pairKey, entry);
+  }
+
   // Los mercados de precio (sin rendezvous RFQ) cotizan sin abrir un canal con
   // el solver; se prefieren sobre los RFQ para un swap puntual.
-  return found.sort((a, b) => {
+  return [...byPair.values()].sort((a, b) => {
     const feed =
       Number(a.market.backend === 'feed') -
       Number(b.market.backend === 'feed');
@@ -273,6 +339,11 @@ export async function quoteBtcUsd(
       );
     }
   }
+
+  // El cliente no acepta un mercado en `quote()`, así que la tarjeta elegida
+  // se fija en la política antes de pedir la cotización. Sin esto, ambas
+  // tarjetas del mismo par compiten y puede ganar la RFQ.
+  setPreferredSwapMarket(market.market);
 
   return swaps.quote({
     give: give.asset,
