@@ -39,6 +39,7 @@ Fuentes: APIs/términos Arkade → skill + MCP `arkade-docs`. Este archivo → d
 - `src/lib/storage/sqlite.ts` adapta `expo-sqlite` a `SQLExecutor` (`run`/`get`/`all`).
 - `canoark-wallet.db`: `SQLiteWalletRepository`, `SQLiteContractRepository`, `SQLiteIntentRepository`.
 - `canoark-swaps.db`: `SQLiteAssetSwapRepository`.
+- `canoark-app.db` (`src/lib/storage/appData.ts`): notas de movimientos y Arkade Cash guardados. Base y executor propios, abiertos de forma perezosa.
 - **Un executor por archivo durante todo el proceso.** Dos executors = escrituras intercaladas.
 - `wipeStorageDatabases()`: cerrar conexiones + `SQLite.deleteDatabaseAsync()`. Ejecutar tras cerrar sesión SDK.
 
@@ -130,7 +131,18 @@ Sin EAS. Dos workflows con el mismo pipeline base (Node22+JDK17+AndroidSDK → `
 ## Pantallas
 - `welcome` (nueva/restaurar), `create` (seed+confirm+biometría+passphrase), `restore`, `unlock` (passphrase+biometría).
 - Tabs: Billetera (saldo, Recibir/Enviar), Historial (`wallet.getTransactionHistory()`), Configuración (General/Seguridad/Avanzado, filas expandibles).
-- Stack: `receive` (tabs Arkade/Lightning/Onchain, QR, Copiar/Compartir/Añadir fondos), `send`.
+- Stack: `receive` (tabs Arkade/Lightning/Onchain, QR, Copiar/Compartir), `send`.
+
+## Notas y explorador
+- `send` y la factura Lightning aceptan una nota opcional; se guarda en `canoark-app.db` con `saveTransactionNote({key,note,direction,amount,createdAt})`.
+- Al enviar, la clave es el TXID (Arkade/onchain) o `swap:<id>`; en facturas `invoice:<id>`. `findTransactionNote()` busca por TXID y, si no, por sentido+importe+fecha de la nota (`invoice:`/`swap:`).
+- `src/components/TransactionNote.tsx` permite ver/editar/borrar la nota en el detalle de cualquier movimiento.
+- Enlaces: `src/lib/arkade/explorer.ts` → `arkadeExplorerTxUrl()` (`explorerUrl/tx/…`) y `onchainExplorerTxUrl()` (`onchainExplorerUrl/tx/…`). Se muestran en la pantalla de éxito del envío y en el detalle del historial.
+
+## Arkade Cash guardado
+- `createCash` (`settings/cash.tsx`) guarda cada token en `cash_tokens` (`saveCashToken`) con importe y nota opcional; también los tokens pendientes de confirmación.
+- Modo «Guardados» lista los tokens de la red activa; se pueden compartir por la hoja del sistema (SMS, Bluetooth, etc.) sin conexión, copiar, reclamar o eliminar de la lista.
+- Reclamar un token guardado lo marca como `claimed` (`markCashClaimed`). Borrar la wallet/restaurar también borra esta base.
 
 ## Refs
 - <https://docs.arkadeos.com/llms.txt>

@@ -1,5 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { File, Paths } from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import {
   ArkadeCash,
   ArkadeCashCreateError,
@@ -23,8 +25,15 @@ import { SettingsScreen } from '../../components/SettingsScreen';
 import { colors, spacing } from '../../constants/theme';
 import { useWallet } from '../../hooks/useWallet';
 import { errorMessage, formatSats, satsFromInput, shorten } from '../../lib/format';
+import {
+  deleteCashToken,
+  listCashTokens,
+  markCashClaimed,
+  saveCashToken,
+  type SavedCashToken,
+} from '../../lib/storage/appData';
 
-type Mode = 'create' | 'claim';
+type Mode = 'create' | 'claim' | 'saved';
 
 const unclaimedLabel: Record<ArkadeCashUnclaimedReason, string> = {
   subdust: 'por debajo del dust (no gastable)',
@@ -34,6 +43,15 @@ const unclaimedLabel: Record<ArkadeCashUnclaimedReason, string> = {
   'sweep-failed': 'el operador rechazó el barrido',
   'recovery-failed': 'falló la importación para recuperación',
 };
+
+const formatCashDate = (timestamp: number): string =>
+  new Date(timestamp).toLocaleString('es-ES', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
 function ModeButton({
   icon,
@@ -81,11 +99,32 @@ export default function CashSettingsScreen() {
 
   const [mode, setMode] = useState<Mode>('create');
 
+  const [saved, setSaved] = useState<SavedCashToken[]>([]);
+  const [savedBusy, setSavedBusy] = useState(false);
+  const [savedError, setSavedError] = useState<string | null>(null);
+
+  const loadSaved = useCallback(async () => {
+    setSavedBusy(true);
+    setSavedError(null);
+    try {
+      setSaved(await listCashTokens());
+    } catch (error) {
+      setSavedError(errorMessage(error));
+    } finally {
+      setSavedBusy(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSaved();
+  }, [loadSaved]);
+
   /* -------------------------------------------------------------- */
   /* Crear                                                           */
   /* -------------------------------------------------------------- */
 
   const [amount, setAmount] = useState('');
+  const [createNote, setCreateNote] = useState('');
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [created, setCreated] = useState<string | null>(null);
@@ -133,11 +172,23 @@ export default function CashSettingsScreen() {
     try {
       const cash = await createCash(amountSats);
       setCreated(cash);
+      await saveCashToken({
+        token: cash,
+        amount: amountSats,
+        note: createNote,
+      }).catch(() => undefined);
+      await loadSaved();
     } catch (error) {
       if (error instanceof ArkadeCashCreateError) {
         setPendingCash(error.cash);
+        await saveCashToken({
+          token: error.cash,
+          amount: amountSats,
+          note: createNote,
+        }).catch(() => undefined);
+        await loadSaved();
         setCreateWarning(
-          'El envío pudo completarse pero falló la confirmación. Conserva este token: puedes reclamarlo tú mismo o entregarlo.'
+          'El envío pudo completarse pero falló la confirmación. Conserva este token: puedes reclamarlo tú mismo o entregarlo. Ya está guardado en «Guardados».'
         );
       } else {
         setCreateError(errorMessage(error));
@@ -155,8 +206,31 @@ export default function CashSettingsScreen() {
     }
   };
 
+  const removeSavedCash = (cash: SavedCashToken) => {
+    Alert.alert(
+      'Eliminar Arkade Cash',
+      cash.status === 'active'
+        ? 'Este token todavía no se ha reclamado. Si lo eliminas de la lista sin haberlo compartido, podrías perder los sats. ¿Continuar?'
+        : 'Se eliminará el registro de esta lista. El token ya fue reclamado.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              await deleteCashToken(cash.token).catch(() => undefined);
+              await loadSaved();
+            })();
+          },
+        },
+      ]
+    );
+  };
+
   const resetCreate = () => {
     setAmount('');
+    setCreateNote('');
     setCreated(null);
     setPendingCash(null);
     setCreateWarning(null);
@@ -207,9 +281,12 @@ export default function CashSettingsScreen() {
 
     setClaimBusy(true);
     try {
-      const result = await claimCash(cashInput);
+      const token = cashInput.trim();
+      const result = await claimCash(token);
       setClaimResult(result);
       setCashInput('');
+      await markCashClaimed(token).catch(() => undefined);
+      await loadSaved();
     } catch (error) {
       if (error instanceof ArkadeCashOperatorMismatchError) {
         setClaimError(
@@ -272,6 +349,16 @@ export default function CashSettingsScreen() {
           active={mode === 'claim'}
           onPress={() => setMode('claim')}
         />
+        <ModeButton
+          icon="▤"
+          label="Guardados"
+          hint="Tus Arkade Cash creados"
+          active={mode === 'saved'}
+          onPress={() => {
+            setMode('saved');
+            void loadSaved();
+          }}
+        />
       </View>
 
       {mode === 'create' ? (
@@ -297,6 +384,15 @@ export default function CashSettingsScreen() {
               placeholder={String(Math.max(cashDustSats, 1000))}
               keyboardType="number-pad"
               hint={`Prefijo del token en esta red: ${expectedHrp}1…`}
+            />
+            <Field
+              label="Nota (opcional)"
+              value={createNote}
+              onChangeText={setCreateNote}
+              placeholder="Ej.: pago a Pedro, feria…"
+              multiline
+              numberOfLines={2}
+              hint="Te ayuda a distinguir varios Arkade Cash guardados."
             />
             {amountProblem ? (
               <Text style={styles.warnText}>{amountProblem}</Text>
@@ -330,6 +426,9 @@ export default function CashSettingsScreen() {
               {created ? (
                 <Row label="Importe" value={`${formatSats(amountSats)} sats`} />
               ) : null}
+              {createNote.trim() ? (
+                <Row label="Nota" value={createNote.trim()} />
+              ) : null}
               <View style={styles.inlineButtons}>
                 <Button
                   title="Compartir"
@@ -362,6 +461,78 @@ export default function CashSettingsScreen() {
             Al crear, el importe sale de tu saldo Arkade y queda en un output
             controlado por una llave nueva. No consume la dirección de recepción.
           </Notice>
+        </>
+      ) : mode === 'saved' ? (
+        <>
+          <SectionLabel>ARKADE CASH GUARDADOS</SectionLabel>
+          <Paragraph muted>
+            Estos tokens siguen en tu poder. Compártelos por mensaje de texto,
+            correo o Bluetooth aunque no tengas conexión: quien los reciba los
+            reclama en su billetera Arkade.
+          </Paragraph>
+
+          {savedError ? <ErrorBanner message={savedError} /> : null}
+
+          {saved.length === 0 ? (
+            <Card>
+              <Text style={styles.warnText}>
+                Todavía no has creado ningún Arkade Cash. Al crearlo se guarda
+                aquí automáticamente para que puedas compartirlo cuando quieras.
+              </Text>
+            </Card>
+          ) : (
+            saved.map(cash => (
+              <Card
+                key={cash.token}
+                title={`${formatSats(cash.amount)} sats`}
+                subtitle={formatCashDate(cash.createdAt)}
+              >
+                <Badge
+                  label={
+                    cash.status === 'claimed' ? 'Reclamado' : 'Disponible'
+                  }
+                  tone={cash.status === 'claimed' ? 'neutral' : 'success'}
+                />
+                {cash.note ? <Row label="Nota" value={cash.note} /> : null}
+                <CopyField
+                  label="Token"
+                  value={cash.token}
+                  displayValue={shorten(cash.token, 24, 18)}
+                />
+                <View style={styles.inlineButtons}>
+                  <Button
+                    title="Compartir"
+                    variant="secondary"
+                    onPress={() => void shareCash(cash.token)}
+                  />
+                  {cash.status === 'active' ? (
+                    <Button
+                      title="Reclamar"
+                      variant="secondary"
+                      onPress={() => {
+                        setCashInput(cash.token);
+                        setClaimError(null);
+                        setClaimResult(null);
+                        setMode('claim');
+                      }}
+                    />
+                  ) : null}
+                </View>
+                <Button
+                  title="Eliminar de la lista"
+                  variant="danger"
+                  onPress={() => removeSavedCash(cash)}
+                />
+              </Card>
+            ))
+          )}
+
+          <Button
+            title="Actualizar lista"
+            variant="ghost"
+            onPress={() => void loadSaved()}
+            loading={savedBusy}
+          />
         </>
       ) : (
         <>

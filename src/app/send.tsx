@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import {
@@ -22,6 +22,10 @@ import { useWallet } from '../hooks/useWallet';
 import { usePreferences } from '../hooks/usePreferences';
 import { bareAssetId } from '../lib/arkade/assetInfo';
 import { formatUnits, parseUnits } from '../lib/arkade/assets';
+import {
+  arkadeExplorerTxUrl,
+  onchainExplorerTxUrl,
+} from '../lib/arkade/explorer';
 import { arkadeAddressHrp, swapErrorMessage } from '../lib/arkade/lightning';
 import {
   destinationKindLabel,
@@ -29,6 +33,7 @@ import {
   type ParsedDestinationKind,
 } from '../lib/bip21';
 import { errorMessage, formatSats, satsFromInput, shorten } from '../lib/format';
+import { saveTransactionNote } from '../lib/storage/appData';
 
 type Stage = 'form' | 'confirm' | 'success';
 
@@ -106,6 +111,7 @@ export default function SendScreen() {
   const [destination, setDestination] = useState('');
   const [amount, setAmount] = useState('');
   const [maxFee, setMaxFee] = useState('500');
+  const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
@@ -228,6 +234,18 @@ export default function SendScreen() {
     setStage('confirm');
   };
 
+  const persistNote = (key: string, sats: number) => {
+    const text = note.trim();
+    if (!text) return;
+    void saveTransactionNote({
+      key,
+      note: text,
+      direction: 'sent',
+      amount: sats,
+      createdAt: Date.now(),
+    }).catch(() => undefined);
+  };
+
   const send = async () => {
     setLocalError(null);
     setBusy(true);
@@ -241,6 +259,7 @@ export default function SendScreen() {
           amount: assetAmountAtomic ?? 0n,
           address: parsed.raw || destination.trim(),
         });
+        persistNote(sent.txid, amountSats);
         setResult({ kind: 'arkade', txid: sent.txid, assetText: assetAmountText });
         setStage('success');
         return;
@@ -252,12 +271,15 @@ export default function SendScreen() {
         feeSats
       );
       if (outcome.kind === 'payment') {
+        persistNote(outcome.txid, amountSats);
         setResult({ kind: 'arkade', txid: outcome.txid });
         setStage('success');
       } else if (outcome.kind === 'arkade') {
+        persistNote(outcome.txid, amountSats);
         setResult({ kind: 'arkade', txid: outcome.txid });
         setStage('success');
       } else if (outcome.kind === 'onchain') {
+        persistNote(outcome.txid, amountSats);
         setResult({
           kind: 'onchain',
           txid: outcome.txid,
@@ -267,6 +289,7 @@ export default function SendScreen() {
         setStage('success');
       } else {
         const swapId = outcome.swap.id;
+        persistNote(`swap:${swapId}`, amountSats);
         setResult({
           kind: 'swap',
           id: swapId,
@@ -302,6 +325,7 @@ export default function SendScreen() {
     setDestination('');
     setAmount('');
     setMaxFee('500');
+    setNote('');
     setResult(null);
     setLocalError(null);
   };
@@ -378,10 +402,36 @@ export default function SendScreen() {
           <CopyField label="TXID" value={result.txid} />
         )}
 
+        {note.trim() ? (
+          <Card title="Nota">
+            <Paragraph>{note.trim()}</Paragraph>
+          </Card>
+        ) : null}
+
         {result.kind === 'onchain' ? (
           <Row
             label="Comisión de la salida"
             value={`${formatSats(result.feeSats)} sats`}
+          />
+        ) : null}
+
+        {result.kind === 'arkade' ? (
+          <Button
+            title="Ver en el explorador Arkade"
+            variant="secondary"
+            onPress={() => {
+              void Linking.openURL(arkadeExplorerTxUrl(result.txid, network));
+            }}
+          />
+        ) : null}
+
+        {result.kind === 'onchain' ? (
+          <Button
+            title="Ver en el explorador onchain"
+            variant="secondary"
+            onPress={() => {
+              void Linking.openURL(onchainExplorerTxUrl(result.txid, network));
+            }}
           />
         ) : null}
 
@@ -480,6 +530,7 @@ export default function SendScreen() {
                   : '—'
             }
           />
+          {note.trim() ? <Row label="Nota" value={note.trim()} /> : null}
         </Card>
 
         {assetMode ? (
@@ -649,6 +700,16 @@ export default function SendScreen() {
             }
           />
         ) : null}
+
+        <Field
+          label="Nota (opcional)"
+          value={note}
+          onChangeText={setNote}
+          placeholder="Ej.: cena, alquiler, pago a Ana…"
+          multiline
+          numberOfLines={2}
+          hint="Se guarda en este dispositivo y aparece en el detalle del pago."
+        />
 
         <Button title="Revisar envío" onPress={review} />
       </Card>

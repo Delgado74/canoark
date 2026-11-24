@@ -48,6 +48,7 @@ import {
 } from '../lib/arkade/onchain';
 import { buildOnchainUri } from '../lib/bip21';
 import { errorMessage, formatSats, satsFromInput, shorten } from '../lib/format';
+import { saveTransactionNote } from '../lib/storage/appData';
 
 type ReceiveTab = 'arkade' | 'lightning' | 'onchain';
 
@@ -56,6 +57,7 @@ type InvoiceState = {
   invoice: string;
   sats: number;
   outcome: string;
+  note?: string;
 };
 
 const isTerminal = (outcome: string) =>
@@ -114,6 +116,7 @@ export default function ReceiveScreen() {
 
   const [tab, setTab] = useState<ReceiveTab>(initialTab);
   const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
   const [invoiceBusy, setInvoiceBusy] = useState(false);
   const [invoice, setInvoice] = useState<InvoiceState | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -167,7 +170,17 @@ export default function ReceiveScreen() {
     invoiceUnsubscribeRef.current = null;
     try {
       const request = await createInvoice(sats);
-      setInvoice({ ...request, sats, outcome: 'accepted' });
+      const savedNote = note.trim();
+      setInvoice({ ...request, sats, outcome: 'accepted', note: savedNote });
+      if (savedNote) {
+        void saveTransactionNote({
+          key: `invoice:${request.id}`,
+          note: savedNote,
+          direction: 'received',
+          amount: sats,
+          createdAt: Date.now(),
+        }).catch(() => undefined);
+      }
       invoiceUnsubscribeRef.current = watchOutcome(request.id, outcome => {
         setInvoice(previous =>
           previous && previous.id === request.id
@@ -187,7 +200,7 @@ export default function ReceiveScreen() {
     } finally {
       setInvoiceBusy(false);
     }
-  }, [amount, createInvoice, refresh, watchOutcome]);
+  }, [amount, createInvoice, note, refresh, watchOutcome]);
 
   const lightningValue = invoice?.invoice ?? lnurlAddress ?? '';
 
@@ -269,21 +282,6 @@ export default function ReceiveScreen() {
     }
   };
 
-  const addFunds = () => {
-    if (tab === 'onchain') {
-      Alert.alert(
-        'Añadir fondos onchain',
-        `Envía bitcoin desde otra billetera a esta dirección. Los fondos aparecerán como boarding y se convertirán en saldo Arkade al liquidarse.`
-      );
-      return;
-    }
-    setTab('onchain');
-    Alert.alert(
-      'Añadir fondos',
-      'Usa la pestaña ONCHAIN para depositar bitcoin desde otra billetera.'
-    );
-  };
-
   const emptyLabel =
     tab === 'arkade'
       ? 'Generando dirección Arkade…'
@@ -331,6 +329,15 @@ export default function ReceiveScreen() {
             placeholder="0"
             keyboardType="number-pad"
           />
+          <Field
+            label="Nota (opcional)"
+            value={note}
+            onChangeText={setNote}
+            placeholder="Ej.: factura de julio, regalo…"
+            multiline
+            numberOfLines={2}
+            hint="Se guarda en este dispositivo y aparece en el detalle del cobro."
+          />
           <Button
             title={invoice ? 'Generar otra factura' : 'Generar factura'}
             variant={invoice ? 'secondary' : 'primary'}
@@ -341,6 +348,9 @@ export default function ReceiveScreen() {
             <Text style={styles.status}>
               {outcomeLabel(invoice.outcome)} · {formatSats(invoice.sats)} sats
             </Text>
+          ) : null}
+          {invoice?.note ? (
+            <Row label="Nota" value={invoice.note} />
           ) : null}
           {invoice &&
           (invoice.outcome === 'claimed' || invoice.outcome === 'paid') ? (
@@ -433,7 +443,6 @@ export default function ReceiveScreen() {
             />
           </View>
         </View>
-        <Button title="Añadir fondos" onPress={addFunds} />
       </Card>
 
       {tab === 'onchain' && boardingAddress ? (

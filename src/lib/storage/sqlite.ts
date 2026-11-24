@@ -7,6 +7,7 @@ import {
   SQLiteWalletRepository,
 } from '@arkade-os/sdk/repositories/sqlite';
 import { SQLiteAssetSwapRepository } from '@arkade-os/swap/repositories/sqlite';
+import { wipeAppDatabase } from './appData';
 
 export const WALLET_DB = 'canoark-wallet.db';
 export const SWAP_DB = 'canoark-swaps.db';
@@ -71,10 +72,14 @@ export function openStorage() {
 }
 
 /**
- * Borra las dos bases de datos. Debe llamarse DESPUÉS de cerrar la sesión,
- * porque SQLite no permite eliminar un archivo abierto.
+ * Borra las bases de datos. Debe llamarse DESPUÉS de cerrar la sesión, porque
+ * SQLite no permite eliminar un archivo abierto.
+ *
+ * La base de datos de la app (notas y Arkade Cash guardados) pertenece a la
+ * identidad actual, así que también se elimina al crear/restaurar o borrar.
  */
 export async function wipeStorageDatabases(): Promise<void> {
   await SQLite.deleteDatabaseAsync(WALLET_DB).catch(() => undefined);
   await SQLite.deleteDatabaseAsync(SWAP_DB).catch(() => undefined);
+  await wipeAppDatabase();
 }

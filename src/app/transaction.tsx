@@ -1,9 +1,10 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Linking, StyleSheet, Text, View } from 'react-native';
 import { useMemo } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import {
   BackButton,
   Badge,
+  Button,
   Card,
   CopyField,
   Notice,
@@ -11,11 +12,17 @@ import {
   Screen,
   Title,
 } from '../components/ui';
+import { TransactionNote } from '../components/TransactionNote';
 import { colors, spacing } from '../constants/theme';
 import { useAssetInfo } from '../hooks/useAssetInfo';
 import { usePreferences } from '../hooks/usePreferences';
+import { useWallet } from '../hooks/useWallet';
 import { formatUnits } from '../lib/arkade/assets';
 import { bareAssetId, shortAssetId } from '../lib/arkade/assetInfo';
+import {
+  arkadeExplorerTxUrl,
+  onchainExplorerTxUrl,
+} from '../lib/arkade/explorer';
 import { formatSats } from '../lib/format';
 import {
   formatFullDate,
@@ -32,6 +39,7 @@ const asString = (value: ParamValue): string => {
 
 export default function TransactionDetailScreen() {
   const { bitcoinParts } = usePreferences();
+  const { network } = useWallet();
   const params = useLocalSearchParams<{
     type?: string;
     amount?: string;
@@ -85,9 +93,21 @@ export default function TransactionDetailScreen() {
   const assetInfos = useAssetInfo(assets.map(asset => asset.assetId));
 
   const txids = [
-    { label: 'Arkade TXID', value: asString(params.arkTxid) },
-    { label: 'Boarding TXID', value: asString(params.boardingTxid) },
-    { label: 'Commitment TXID', value: asString(params.commitmentTxid) },
+    {
+      label: 'Arkade TXID',
+      value: asString(params.arkTxid),
+      chain: 'arkade' as const,
+    },
+    {
+      label: 'Boarding TXID',
+      value: asString(params.boardingTxid),
+      chain: 'onchain' as const,
+    },
+    {
+      label: 'Commitment TXID',
+      value: asString(params.commitmentTxid),
+      chain: 'onchain' as const,
+    },
   ].filter(entry => entry.value);
 
   const status = transactionStatus({ settled, tag });
@@ -158,14 +178,34 @@ export default function TransactionDetailScreen() {
           </Notice>
         ) : (
           txids.map(entry => (
-            <CopyField
-              key={entry.label}
-              label={entry.label}
-              value={entry.value}
-            />
+            <View key={entry.label} style={styles.txBlock}>
+              <CopyField label={entry.label} value={entry.value} />
+              <Button
+                title="Ver en el explorador"
+                variant="secondary"
+                onPress={() => {
+                  void Linking.openURL(
+                    entry.chain === 'arkade'
+                      ? arkadeExplorerTxUrl(entry.value, network)
+                      : onchainExplorerTxUrl(entry.value, network)
+                  );
+                }}
+              />
+            </View>
           ))
         )}
       </Card>
+
+      <TransactionNote
+        keys={[
+          asString(params.arkTxid),
+          asString(params.boardingTxid),
+          asString(params.commitmentTxid),
+        ]}
+        direction={incoming ? 'received' : 'sent'}
+        amount={Math.abs(amount)}
+        createdAt={createdAt}
+      />
 
     </Screen>
   );
@@ -223,5 +263,9 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 16,
     marginTop: spacing.sm,
+  },
+  txBlock: {
+    gap: spacing.sm,
+    paddingBottom: spacing.sm,
   },
 });
