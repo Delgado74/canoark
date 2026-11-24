@@ -334,6 +334,13 @@ export default function CashSettingsScreen() {
         batch swap.
       </Paragraph>
 
+      <Notice tone="warning">
+        Los Arkade Cash guardados viven solo en este dispositivo. La frase de
+        recuperación restaura tu saldo Arkade, pero no estos tokens: si
+        restauras la billetera en otro móvil o borras la app, desaparecen de la
+        lista. Comparte o copia los que quieras conservar.
+      </Notice>
+
       <View style={styles.modeRow}>
         <ModeButton
           icon="◆"

@@ -155,6 +155,11 @@ export default function CreateWalletScreen() {
           La passphrase protege este dispositivo, pero no sustituye a la frase de
           recuperación. Si pierdes ambas, pierdes los fondos.
         </Notice>
+        <Notice tone="info">
+          Los Arkade Cash que crees se guardan cifrados solo en este dispositivo.
+          La frase de recuperación restaura tu saldo, no esos tokens: compártelos
+          o cópialos si quieres conservarlos.
+        </Notice>
       </Screen>
     );
   }

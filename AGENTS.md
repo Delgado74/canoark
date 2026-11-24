@@ -145,6 +145,7 @@ Sin EAS. Dos workflows con el mismo pipeline base (Node22+JDK17+AndroidSDK → `
 - `createCash` (`settings/cash.tsx`) guarda cada token en `cash_tokens` (`saveCashToken`) con importe y nota opcional; también los tokens pendientes de confirmación.
 - Modo «Guardados» lista los tokens de la red activa; se pueden compartir por la hoja del sistema (SMS, Bluetooth, etc.) sin conexión, copiar, reclamar o eliminar de la lista.
 - Reclamar un token guardado lo marca como `claimed` (`markCashClaimed`). Borrar la wallet/restaurar también borra esta base.
+- La frase de recuperación **no** recupera los Arkade Cash guardados ni las notas: son datos locales del dispositivo. La UI lo avisa en crear/restaurar y en Configuración → Arkade Cash.
 
 ## Refs
 - <https://docs.arkadeos.com/llms.txt>

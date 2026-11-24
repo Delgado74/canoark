@@ -137,6 +137,12 @@ export default function RestoreWalletScreen() {
           billetera que restauraste. Una frase en la red equivocada deriva otras
           claves.
         </Notice>
+        <Notice tone="warning">
+          La frase recupera las llaves y el saldo Arkade, pero no los datos que
+          solo estaban en el móvil anterior: las notas del historial y los
+          Arkade Cash guardados. Si tenías Arkade Cash, necesitas el token
+          original; la frase no los devuelve.
+        </Notice>
       </Screen>
     );
   }
