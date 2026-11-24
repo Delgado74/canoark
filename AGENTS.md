@@ -40,6 +40,7 @@ Fuentes: APIs/términos Arkade → skill + MCP `arkade-docs`. Este archivo → d
 - `canoark-wallet.db`: `SQLiteWalletRepository`, `SQLiteContractRepository`, `SQLiteIntentRepository`.
 - `canoark-swaps.db`: `SQLiteAssetSwapRepository`.
 - `canoark-app.db` (`src/lib/storage/appData.ts`): notas de movimientos y Arkade Cash guardados. Base y executor propios, abiertos de forma perezosa.
+- Arkade Cash cifrado en reposo: token con XChaCha20-Poly1305 (`nonce`+`ciphertext`), clave 32B en `expo-secure-store` (`WHEN_UNLOCKED_THIS_DEVICE_ONLY`); la tabla guarda `token_hash` (SHA-256) para buscar/marcar/borrar sin descifrar. Las filas antiguas en claro se migran solas en la primera operación de cash, dentro de una transacción.
 - **Un executor por archivo durante todo el proceso.** Dos executors = escrituras intercaladas.
 - `wipeStorageDatabases()`: cerrar conexiones + `SQLite.deleteDatabaseAsync()`. Ejecutar tras cerrar sesión SDK.
 

@@ -1,4 +1,13 @@
+import * as Crypto from 'expo-crypto';
+import * as SecureStore from 'expo-secure-store';
 import * as SQLite from 'expo-sqlite';
+import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+import {
+  bytesToHex,
+  hexToBytes,
+  utf8ToBytes,
+} from '@noble/hashes/utils.js';
 import { ACTIVE_NETWORK } from '../../constants/network';
 
 /**
@@ -11,6 +20,19 @@ import { ACTIVE_NETWORK } from '../../constants/network';
  */
 export const APP_DB = 'canoark-app.db';
 
+/**
+ * Clave local que cifra los Arkade Cash guardados. Vive en SecureStore, no en
+ * la base de datos: los tokens son dinero al portador y no deben quedar
+ * legibles aunque alguien copie el archivo SQLite.
+ */
+const CASH_KEY = 'canoark.cashStoreKey.v1';
+const NONCE_BYTES = 24;
+const KEY_BYTES = 32;
+
+const secureOptions: SecureStore.SecureStoreOptions = {
+  keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+};
+
 export type NoteDirection = 'sent' | 'received';
 
 export type TransactionNote = {
@@ -21,6 +43,20 @@ export type TransactionNote = {
   createdAt: number;
   updatedAt: number;
 };
+
+const CASH_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS cash_tokens (
+    token_hash TEXT PRIMARY KEY NOT NULL,
+    network TEXT NOT NULL,
+    amount INTEGER NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at INTEGER NOT NULL,
+    claimed_at INTEGER,
+    nonce TEXT NOT NULL,
+    ciphertext TEXT NOT NULL
+  );
+`;
 
 const INIT_SQL = `
   PRAGMA journal_mode = WAL;
@@ -35,23 +71,23 @@ const INIT_SQL = `
     updated_at INTEGER NOT NULL,
     UNIQUE(network, ref_key)
   );
-  CREATE TABLE IF NOT EXISTS cash_tokens (
-    token TEXT PRIMARY KEY NOT NULL,
-    network TEXT NOT NULL,
-    amount INTEGER NOT NULL,
-    note TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'active',
-    created_at INTEGER NOT NULL,
-    claimed_at INTEGER
-  );
+  ${CASH_SCHEMA}
 `;
 
 let database: SQLite.SQLiteDatabase | null = null;
+/** Las bases creadas antes del cifrado guardan el token legible y hay que migrarlas. */
+let needsCashMigration = false;
 
 function db(): SQLite.SQLiteDatabase {
   if (!database) {
     const opened = SQLite.openDatabaseSync(APP_DB);
     opened.execSync(INIT_SQL);
+    const columns = opened.getAllSync<{ name: string }>(
+      'PRAGMA table_info(cash_tokens)'
+    );
+    needsCashMigration =
+      columns.length > 0 &&
+      !columns.some(column => column.name === 'token_hash');
     database = opened;
   }
   return database;
@@ -183,7 +219,18 @@ export type SavedCashToken = {
 };
 
 type CashRow = {
+  amount: number;
+  note: string;
+  status: string;
+  created_at: number;
+  claimed_at: number | null;
+  nonce: string;
+  ciphertext: string;
+};
+
+type LegacyCashRow = {
   token: string;
+  network: string;
   amount: number;
   note: string;
   status: string;
@@ -191,14 +238,135 @@ type CashRow = {
   claimed_at: number | null;
 };
 
-const toCash = (row: CashRow): SavedCashToken => ({
-  token: row.token,
+let cashKeyPromise: Promise<Uint8Array> | null = null;
+let cashReadyPromise: Promise<Uint8Array> | null = null;
+
+/** Clave XChaCha20 del dispositivo. Se crea una sola vez y queda en SecureStore. */
+function getCashKey(): Promise<Uint8Array> {
+  if (cashKeyPromise) return cashKeyPromise;
+
+  cashKeyPromise = (async () => {
+    const stored = await SecureStore.getItemAsync(CASH_KEY, secureOptions);
+    if (stored) {
+      const key = hexToBytes(stored);
+      if (key.length !== KEY_BYTES) {
+        throw new Error('La clave local de Arkade Cash no es válida.');
+      }
+      return key;
+    }
+
+    const key = Crypto.getRandomBytes(KEY_BYTES);
+    await SecureStore.setItemAsync(CASH_KEY, bytesToHex(key), secureOptions);
+    return key;
+  })().catch(error => {
+    cashKeyPromise = null;
+    throw error;
+  });
+
+  return cashKeyPromise;
+}
+
+const tokenHash = (token: string): string =>
+  bytesToHex(sha256(utf8ToBytes(token)));
+
+function encryptToken(
+  token: string,
+  key: Uint8Array
+): { nonce: string; ciphertext: string } {
+  const nonce = Crypto.getRandomBytes(NONCE_BYTES);
+  return {
+    nonce: bytesToHex(nonce),
+    ciphertext: bytesToHex(
+      xchacha20poly1305(key, nonce).encrypt(utf8ToBytes(token))
+    ),
+  };
+}
+
+function decryptToken(row: CashRow, key: Uint8Array): string {
+  const plaintext = xchacha20poly1305(key, hexToBytes(row.nonce)).decrypt(
+    hexToBytes(row.ciphertext)
+  );
+  return Array.from(plaintext, byte => String.fromCharCode(byte)).join('');
+}
+
+const toCash = (row: CashRow, key: Uint8Array): SavedCashToken => ({
+  token: decryptToken(row, key),
   amount: row.amount,
   note: row.note,
   status: row.status === 'claimed' ? 'claimed' : 'active',
   createdAt: row.created_at,
   claimedAt: row.claimed_at,
 });
+
+/**
+ * Reescribe la tabla antigua (token legible) con el esquema cifrado. Se hace en
+ * una transacción: si la app se cierra a medias, la tabla original sigue ahí y
+ * la migración se reintenta en el siguiente arranque.
+ */
+async function migrateCashTokens(key: Uint8Array): Promise<void> {
+  const database = db();
+  const legacy = await database.getAllAsync<LegacyCashRow>(
+    `SELECT token, network, amount, note, status, created_at, claimed_at
+       FROM cash_tokens`
+  );
+
+  const encrypted = legacy.map(row => ({
+    hash: tokenHash(row.token),
+    network: row.network,
+    amount: row.amount,
+    note: row.note,
+    status: row.status,
+    createdAt: row.created_at,
+    claimedAt: row.claimed_at,
+    ...encryptToken(row.token, key),
+  }));
+
+  await database.withTransactionAsync(async () => {
+    await database.execAsync(
+      'ALTER TABLE cash_tokens RENAME TO cash_tokens_legacy'
+    );
+    await database.execAsync(CASH_SCHEMA);
+    for (const row of encrypted) {
+      await database.runAsync(
+        `INSERT OR REPLACE INTO cash_tokens
+           (token_hash, network, amount, note, status, created_at, claimed_at,
+            nonce, ciphertext)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          row.hash,
+          row.network,
+          row.amount,
+          row.note,
+          row.status,
+          row.createdAt,
+          row.claimedAt,
+          row.nonce,
+          row.ciphertext,
+        ]
+      );
+    }
+    await database.execAsync('DROP TABLE cash_tokens_legacy');
+  });
+
+  needsCashMigration = false;
+}
+
+/** Clave lista y, si hacía falta, migración antigua completada. */
+function ensureCashReady(): Promise<Uint8Array> {
+  if (!cashReadyPromise) {
+    cashReadyPromise = (async () => {
+      // Abre la base aquí para detectar si aún tiene el esquema antiguo.
+      db();
+      const key = await getCashKey();
+      if (needsCashMigration) await migrateCashTokens(key);
+      return key;
+    })().catch(error => {
+      cashReadyPromise = null;
+      throw error;
+    });
+  }
+  return cashReadyPromise;
+}
 
 /** Guarda un token recién creado para poder compartirlo más tarde, incluso sin conexión. */
 export async function saveCashToken(params: {
@@ -208,52 +376,63 @@ export async function saveCashToken(params: {
 }): Promise<void> {
   const token = params.token.trim();
   if (!token) return;
+
+  const key = await ensureCashReady();
+  const { nonce, ciphertext } = encryptToken(token, key);
   await db().runAsync(
-    `INSERT INTO cash_tokens (token, network, amount, note, status, created_at)
-     VALUES (?, ?, ?, ?, 'active', ?)
-     ON CONFLICT(token) DO UPDATE SET
+    `INSERT INTO cash_tokens
+       (token_hash, network, amount, note, status, created_at, claimed_at,
+        nonce, ciphertext)
+     VALUES (?, ?, ?, ?, 'active', ?, NULL, ?, ?)
+     ON CONFLICT(token_hash) DO UPDATE SET
        amount = excluded.amount,
        note = CASE WHEN excluded.note <> '' THEN excluded.note ELSE cash_tokens.note END`,
     [
-      token,
+      tokenHash(token),
       ACTIVE_NETWORK.name,
       Math.round(params.amount),
       params.note?.trim() ?? '',
       Date.now(),
+      nonce,
+      ciphertext,
     ]
   );
 }
 
 export async function listCashTokens(): Promise<SavedCashToken[]> {
+  const key = await ensureCashReady();
   const rows = await db().getAllAsync<CashRow>(
-    `SELECT token, amount, note, status, created_at, claimed_at
+    `SELECT amount, note, status, created_at, claimed_at, nonce, ciphertext
        FROM cash_tokens
       WHERE network = ?
       ORDER BY created_at DESC`,
     [ACTIVE_NETWORK.name]
   );
-  return rows.map(toCash);
+  return rows.map(row => toCash(row, key));
 }
 
 export async function markCashClaimed(token: string): Promise<void> {
+  await ensureCashReady();
   await db().runAsync(
     `UPDATE cash_tokens
         SET status = 'claimed', claimed_at = ?
-      WHERE network = ? AND token = ?`,
-    [Date.now(), ACTIVE_NETWORK.name, token.trim()]
+      WHERE network = ? AND token_hash = ?`,
+    [Date.now(), ACTIVE_NETWORK.name, tokenHash(token.trim())]
   );
 }
 
 export async function deleteCashToken(token: string): Promise<void> {
-  await db().runAsync('DELETE FROM cash_tokens WHERE network = ? AND token = ?', [
-    ACTIVE_NETWORK.name,
-    token.trim(),
-  ]);
+  await ensureCashReady();
+  await db().runAsync(
+    'DELETE FROM cash_tokens WHERE network = ? AND token_hash = ?',
+    [ACTIVE_NETWORK.name, tokenHash(token.trim())]
+  );
 }
 
 export function closeAppDatabase(): void {
   const current = database;
   database = null;
+  needsCashMigration = false;
   current?.closeSync();
 }
 
