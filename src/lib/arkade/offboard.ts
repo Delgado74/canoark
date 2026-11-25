@@ -22,9 +22,24 @@ import { ACTIVE_NETWORK } from '../../constants/network';
  * preimagen y no hay nada que reclamar después.
  */
 
-/** El operador de Mutinynet comparte parámetros con testnet. */
-const onchainNetwork = (): OnchainNetwork =>
-  ACTIVE_NETWORK.isMainnet ? 'bitcoin' : 'testnet';
+/**
+ * Red L1 del destino onchain.
+ *
+ * Se deduce del prefijo de la dirección en vez de asumir siempre la red activa:
+ * `l1ScriptForAddress` rechaza el HRP equivocado y una salida a una dirección
+ * `bcrt1…` (regtest de CI) no se puede ni cotizar con los parámetros de
+ * testnet. El script resultante es idéntico entre redes; el prefijo solo sirve
+ * para decodificar la dirección.
+ */
+export function onchainNetworkOf(address: string): OnchainNetwork {
+  const lower = address.toLowerCase();
+  if (lower.startsWith('bcrt1')) return 'regtest';
+  if (lower.startsWith('bc1') || lower.startsWith('1') || lower.startsWith('3')) {
+    return 'bitcoin';
+  }
+  if (lower.startsWith('tb1') || /^[mn2]/.test(address)) return 'testnet';
+  return ACTIVE_NETWORK.isMainnet ? 'bitcoin' : 'testnet';
+}
 
 const toHex = (bytes: Uint8Array): string =>
   Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
@@ -150,7 +165,7 @@ async function buildCollaborativeExit(
 
   // Comisión que el operador cobra por crear la salida onchain.
   const outputScript = toHex(
-    l1ScriptForAddress(destination, onchainNetwork())
+    l1ScriptForAddress(destination, onchainNetworkOf(destination))
   );
   const exitFee = estimator.evalOnchainOutput({
     amount: BigInt(amountSats),

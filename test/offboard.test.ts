@@ -1,11 +1,16 @@
 import { ArkAddress, type IWallet } from '@arkade-os/sdk';
 import {
+  onchainNetworkOf,
   planCollaborativeExit,
   quoteCollaborativeExit,
   sendCollaborativeExit,
 } from '../src/lib/arkade/offboard';
 
 const DESTINATION = 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx';
+// P2TR de regtest: el HRP `bcrt` no lo decodifica `l1ScriptForAddress` con los
+// parámetros de testnet, que es lo que rompió el regtest de CI al cotizar.
+const REGTEST_DESTINATION =
+  'bcrt1pa43f28a8x76ye6ra7ch7a8l7jq5mmp6xayr7rk8mm4c23r05rz6qqcetew';
 const OWN_ADDRESS = new ArkAddress(
   new Uint8Array(32).fill(1),
   new Uint8Array(32).fill(2),
@@ -48,6 +53,34 @@ const fakeWallet = () => {
 };
 
 describe('salida colaborativa a L1 (offboarding nativo)', () => {
+  it('deduce la red L1 del destino sin asumir la red activa', () => {
+    expect(onchainNetworkOf(REGTEST_DESTINATION)).toBe('regtest');
+    expect(onchainNetworkOf(DESTINATION)).toBe('testnet');
+    expect(onchainNetworkOf('bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq')).toBe(
+      'bitcoin'
+    );
+    expect(onchainNetworkOf('1BoatSLRHtKNngkdXEeobR76b53LETtpyT')).toBe(
+      'bitcoin'
+    );
+    expect(onchainNetworkOf('mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn')).toBe(
+      'testnet'
+    );
+  });
+
+  it('cotiza una salida a una dirección de regtest (bcrt1…)', async () => {
+    const { wallet } = fakeWallet();
+    const plan = await quoteCollaborativeExit(
+      wallet,
+      REGTEST_DESTINATION,
+      10_000
+    );
+
+    expect(plan.outputs[0]).toEqual({
+      address: REGTEST_DESTINATION,
+      amount: 10_000n,
+    });
+  });
+
   it('cotiza sin solver: la salida paga la dirección destino', async () => {
     const { wallet } = fakeWallet();
     const plan = await quoteCollaborativeExit(wallet, DESTINATION, 10_000);
