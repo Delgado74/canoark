@@ -50,7 +50,7 @@
   "devDependencies": {
     "@babel/core": "^7.28.0",
     "@types/jest": "^30.0.0",
-    "@types/node": "^22.20.5",
+    "@types/node": "^26.6.6",
     "@types/react": "~19.3.0",
     "@types/sql.js": "^1.16.1",
     "jest": "^30.5.2",
