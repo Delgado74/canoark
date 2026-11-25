@@ -11,6 +11,12 @@ on:
 permissions:
   contents: read
 
+# Un stack por vez: levantar varios regtest a la vez satura la red del runner y
+# agranda la ventana en la que Fulcrum/mempool aún no responden.
+concurrency:
+  group: arkade-regtest
+  cancel-in-progress: false
+
 jobs:
   regtest:
     name: Real arkd against the pinned stack
@@ -47,10 +53,32 @@ jobs:
         run: npm run typecheck
 
       - name: Start regtest stack
-        run: node arkade-regtest/regtest.mjs start --env test/e2e/regtest.env --profile ark
+        run: |
+          # El arranque falla de vez en cuando esperando a Fulcrum (mempool
+          # Esplora no responde en los 3 min que espera el orquestador). Un
+          # reintento limpio evita tener que reejecutar el job a mano.
+          for attempt in 1 2; do
+            if node arkade-regtest/regtest.mjs start --env test/e2e/regtest.env --profile ark; then
+              exit 0
+            fi
+            echo "Arranque fallido (intento $attempt); limpiando el stack" >&2
+            node arkade-regtest/regtest.mjs stop || true
+          done
+          exit 1
 
       - name: Regtest suite
-        run: npm run test:regtest
+        # La suite es flaky por la infraestructura, no por el SDK: de vez en
+        # cuando mempool/Esplora tarda en indexar el depósito de boarding y la
+        # espera se agota. Un segundo intento reutiliza el mismo stack y el
+        # depósito ya confirmado, así que suele pasar a la primera consulta.
+        run: |
+          for attempt in 1 2; do
+            if npm run test:regtest; then
+              exit 0
+            fi
+            echo "Suite fallida (intento $attempt); reintentando" >&2
+          done
+          exit 1
         env:
           ARKADE_REGTEST_DIR: ${{ github.workspace }}/arkade-regtest
 

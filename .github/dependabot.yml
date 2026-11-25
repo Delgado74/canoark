@@ -5,14 +5,26 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # La etiqueta `arkade` NO se pone aquí: es la que dispara el regtest y solo
+    # debe llevarla un PR que toque @arkade-os/*. Se añade a mano en ese caso.
     labels:
-      - arkade
       - dependencies
     commit-message:
       prefix: chore(deps)
     open-pull-requests-limit: 5
-    # Sin auto-merge: cada subida pasa por test.yml y, si toca Arkade,
-    # por la suite regtest con la etiqueta `arkade`.
+    # Sin auto-merge: cada subida pasa por test.yml y, si toca Arkade y se le
+    # añade la etiqueta `arkade`, por la suite regtest.
+    ignore:
+      # Peer exacto de @arkade-os/swap: cualquier otra versión rompe npm ci con
+      # ERESOLVE. Se actualiza solo cuando swap publique un peer nuevo.
+      - dependency-name: nostr-tools
+      # Saltos major que el stack Expo 58 todavía no soporta.
+      - dependency-name: typescript
+        update-types:
+          - version-update:semver-major
+      - dependency-name: '@babel/core'
+        update-types:
+          - version-update:semver-major
     groups:
       arkade:
         patterns:
