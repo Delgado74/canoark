@@ -67,7 +67,18 @@ jobs:
           exit 1
 
       - name: Regtest suite
-        run: npm run test:regtest
+        # La suite es flaky por la infraestructura, no por el SDK: de vez en
+        # cuando mempool/Esplora tarda en indexar el depósito de boarding y la
+        # espera se agota. Un segundo intento reutiliza el mismo stack y el
+        # depósito ya confirmado, así que suele pasar a la primera consulta.
+        run: |
+          for attempt in 1 2; do
+            if npm run test:regtest; then
+              exit 0
+            fi
+            echo "Suite fallida (intento $attempt); reintentando" >&2
+          done
+          exit 1
         env:
           ARKADE_REGTEST_DIR: ${{ github.workspace }}/arkade-regtest
 

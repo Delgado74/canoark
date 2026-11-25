@@ -65,7 +65,9 @@ describe('integración real contra arkd de regtest', () => {
   });
 
   it('hace boarding, liquida, envía offchain y hace offboarding', async () => {
+    const departureSats = 100_000;
     const boardingAddress = await session.wallet.getBoardingAddress();
+    console.log(`boarding ${boardingAddress}`);
     cli('faucet', boardingAddress, '0.001');
     cli('mine', '1');
 
@@ -73,22 +75,46 @@ describe('integración real contra arkd de regtest', () => {
     // de Esplora no está disponible en Node. El `mine` puede adelantarse a la
     // difusión de la tx del faucet, así que se mina un par de bloques más
     // mientras se espera en vez de fiarlo todo a un único bloque.
+    //
+    // El manager de liquidación (`boardingUtxoSweep`) también puede barrer el
+    // depósito en segundo plano antes de que lo observemos: en ese caso ya no
+    // hay `boarding.confirmed`, pero el importe está en `available`. Se acepta
+    // cualquiera de los dos estados para no esperar a un boarding que ya se
+    // liquidó solo.
     let extraBlocks = 0;
+    let lastBalance: string | undefined;
     await waitFor(
       'boarding confirmado',
       async () => {
         const balance = await session.wallet.getBalance();
-        if (balance.boarding.confirmed > 0) return true;
-        if (extraBlocks < 3) {
+        lastBalance = JSON.stringify({
+          boarding: balance.boarding,
+          available: balance.available,
+        });
+        if (
+          balance.boarding.confirmed > 0 ||
+          balance.available >= departureSats / 2
+        ) {
+          return true;
+        }
+        if (extraBlocks < 4) {
           extraBlocks += 1;
           cli('mine', '1');
         }
         return false;
       },
       60
-    );
+    ).catch(error => {
+      console.error(`último balance observado: ${lastBalance}`);
+      throw error;
+    });
 
-    await session.wallet.settle();
+    // Solo se liquida a mano si el depósito sigue en boarding; si el sweep
+    // automático ya lo convirtió, `settle()` no tendría nada que barrer.
+    const beforeSettle = await session.wallet.getBalance();
+    if (beforeSettle.boarding.confirmed > 0) {
+      await session.wallet.settle();
+    }
     await waitFor(
       'VTXOs liquidados',
       async () => {
