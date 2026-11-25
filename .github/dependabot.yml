@@ -25,6 +25,11 @@ updates:
       - dependency-name: '@babel/core'
         update-types:
           - version-update:semver-major
+      # El runtime fijado es Node 22; los tipos major de Node (26) describen
+      # APIs que la app no tiene en ejecución.
+      - dependency-name: '@types/node'
+        update-types:
+          - version-update:semver-major
     groups:
       arkade:
         patterns:
