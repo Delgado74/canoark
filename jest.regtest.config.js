@@ -5,5 +5,5 @@ module.exports = {
   ...base,
   testMatch: ['<rootDir>/test/e2e/**/*.test.ts'],
   testPathIgnorePatterns: ['/node_modules/'],
-  testTimeout: 180_000,
+  testTimeout: 420_000,
 };

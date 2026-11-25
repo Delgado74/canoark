@@ -48,7 +48,7 @@ beforeAll(async () => {
       process.env.ARKADE_REGTEST_SOLVER_REGISTRY ??
       'http://localhost:3002/solver-registry/regtest.json',
   });
-}, 120_000);
+}, 180_000);
 
 afterAll(async () => {
   await closeArkadeSession();
@@ -69,16 +69,34 @@ describe('integración real contra arkd de regtest', () => {
     cli('faucet', boardingAddress, '0.001');
     cli('mine', '1');
 
-    await waitFor('boarding confirmado', async () => {
-      const balance = await session.wallet.getBalance();
-      return balance.boarding.confirmed > 0;
-    });
+    // El SDK detecta el depósito con polling HTTP (15 s) cuando el websocket
+    // de Esplora no está disponible en Node. El `mine` puede adelantarse a la
+    // difusión de la tx del faucet, así que se mina un par de bloques más
+    // mientras se espera en vez de fiarlo todo a un único bloque.
+    let extraBlocks = 0;
+    await waitFor(
+      'boarding confirmado',
+      async () => {
+        const balance = await session.wallet.getBalance();
+        if (balance.boarding.confirmed > 0) return true;
+        if (extraBlocks < 3) {
+          extraBlocks += 1;
+          cli('mine', '1');
+        }
+        return false;
+      },
+      60
+    );
 
     await session.wallet.settle();
-    await waitFor('VTXOs liquidados', async () => {
-      const balance = await session.wallet.getBalance();
-      return balance.available >= 10_000;
-    });
+    await waitFor(
+      'VTXOs liquidados',
+      async () => {
+        const balance = await session.wallet.getBalance();
+        return balance.available >= 10_000;
+      },
+      60
+    );
 
     const ownAddress = await session.wallet.getAddress();
     const txid = await session.wallet.send({
@@ -93,9 +111,13 @@ describe('integración real contra arkd de regtest', () => {
       50_000
     );
     expect(exit.txid).toMatch(/^[0-9a-f]{64}$/);
-    await waitFor('salida onchain confirmada', async () => {
-      cli('mine', '1');
-      return (await session.onchainWallet.getBalance()) > 0;
-    });
+    await waitFor(
+      'salida onchain confirmada',
+      async () => {
+        cli('mine', '1');
+        return (await session.onchainWallet.getBalance()) > 0;
+      },
+      60
+    );
   });
 });
