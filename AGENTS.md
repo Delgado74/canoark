@@ -3,7 +3,7 @@
 Fuentes: APIs/términos Arkade → skill + MCP `arkade-docs`. Este archivo → decisiones del proyecto. Conflicto de API: gana doc oficial. Conflicto de decisión: gana este archivo.
 
 ## Versiones (no cambiar sin verificar peer)
-- Expo 58 (`expo@~58.0.24`), RN 0.88.1, React 19.3.1
+- Expo 58 (`expo@~58.0.26`, `expo-router@~58.0.32`), RN 0.88.1, React 19.3.1
 - `@arkade-os/sdk` 0.5.13, `@arkade-os/swap` 0.1.15, `@arkade-os/lnurl-client` 0.9.4
 - `nostr-tools` **exacto `2.24.1`** (peer exacto de swap). No `^2.26.0`. No `--legacy-peer-deps`.
 - Node 22, JDK 17
