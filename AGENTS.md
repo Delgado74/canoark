@@ -3,7 +3,7 @@
 Fuentes: APIs/términos Arkade → skill + MCP `arkade-docs`. Este archivo → decisiones del proyecto. Conflicto de API: gana doc oficial. Conflicto de decisión: gana este archivo.
 
 ## Versiones (no cambiar sin verificar peer)
-- Expo 58 (`expo@~58.0.24`), RN 0.88.1, React 19.3.0
+- Expo 58 (`expo@~58.0.24`), RN 0.88.1, React 19.3.1
 - `@arkade-os/sdk` 0.5.13, `@arkade-os/swap` 0.1.15, `@arkade-os/lnurl-client` 0.9.4
 - `nostr-tools` **exacto `2.24.1`** (peer exacto de swap). No `^2.26.0`. No `--legacy-peer-deps`.
 - Node 22, JDK 17
@@ -114,9 +114,9 @@ Sin EAS. Dos workflows con el mismo pipeline base (Node22+JDK17+AndroidSDK → `
 
 ## Tests de compatibilidad Arkade
 - Capa 1 (obligatoria en cada PR): `npm run test:compat` (Jest 30 + `jest-expo@~58`, SQLite real en memoria con `sql.js`). Usa los paquetes reales `@arkade-os/sdk`, `@arkade-os/swap` y `@arkade-os/lnurl-client`; solo se mockean las fronteras nativas (`expo-sqlite`, `expo-secure-store`, `expo-crypto`). Polyfills de `crypto` en `test/setup.ts` antes de importar el SDK.
-- Capa 2 (regtest en GitHub Actions): `npm run test:regtest` contra `ArkLabsHQ/arkade-regtest` fijado en el submódulo de `ts-sdk` para SDK 0.5.13 (`666fccb`). Se dispara en PRs con etiqueta `arkade`, en tags `v*` y por dispatch; usa `test/e2e/regtest.env` y `openArkadeSession(mnemonic, mode, overrides)` para apuntar a localhost. `test/e2e/regtest.env` fija arkd `v0.9.25` y emulator `v0.0.9`, que es lo que prueba el SDK 0.5.13. No es requisito local: Docker Hub está geo-bloqueado en la red del desarrollador.
+- Capa 2 (regtest en GitHub Actions): `npm run test:regtest` contra `ArkLabsHQ/arkade-regtest` fijado en el submódulo de `ts-sdk` para SDK 0.5.13 (`666fccb`). Se dispara en PRs con etiqueta `arkade`, en tags `v*` y por dispatch; usa `test/e2e/regtest.env` y `openArkadeSession(mnemonic, mode, overrides)` para apuntar a localhost. `test/e2e/regtest.env` fija arkd `v0.9.25` y emulator `v0.0.9`, que es lo que prueba el SDK 0.5.13. No es requisito local: Docker Hub está geo-bloqueado en la red del desarrollador. El workflow serializa los stacks (un regtest a la vez) y reintenta el arranque una vez: el fallo típico es Fulcrum/mempool sin responder en los 3 min del orquestador, no el código.
 - `npm test` = Capa 1 (no incluye `test/e2e/`). `npm run typecheck` incluye todos los tests (`types: ["jest","node"]` en `tsconfig.json`).
-- Dependabot grouped semanal (`@arkade-os/*`, `nostr-tools`, `light-bolt11-decoder`, `@noble/*`, `@scure/*`) con etiqueta `arkade` y **sin auto-merge**: cada PR debe pasar Capa 1 y, si toca Arkade, Capa 2.
+- Dependabot grouped semanal (`@arkade-os/*`, `nostr-tools`, `light-bolt11-decoder`, `@noble/*`, `@scure/*`) y **sin auto-merge**. La etiqueta `arkade` **no** se pone automáticamente: se añade a mano solo cuando el PR toca `@arkade-os/*`, porque es la que lanza la Capa 2. `nostr-tools` está en `ignore` (peer exacto) y los majors de `typescript` y `@babel/core` también, hasta que Expo SDK 58 los soporte. Todo PR de Dependabot pasa Capa 1.
 - `nostr-tools` sigue en `2.24.1` exacto; `deps.test.ts` falla si el peer de `@arkade-os/swap` deja de coincidir o si `package.json` deja de fijar la versión instalada.
 - **Delegación al Executor desactivada**: no configurar `executorProvider` ni llamar a `registerBoarding`/`registerRenewal`. El servicio sigue en 0.0.x, los operadores de Mutinynet/mainnet no publican su URL y cambia la dirección de boarding y la renovación. `test/executor-off.test.ts` falla si alguien lo activa. `UnilateralExit.Executor` es distinto: es el ejecutor local de la salida unilateral y se mantiene.
 
