@@ -22,9 +22,24 @@ import { ACTIVE_NETWORK } from '../../constants/network';
  * preimagen y no hay nada que reclamar después.
  */
 
-/** El operador de Mutinynet comparte parámetros con testnet. */
-const onchainNetwork = (): OnchainNetwork =>
-  ACTIVE_NETWORK.isMainnet ? 'bitcoin' : 'testnet';
+/**
+ * Red L1 del destino onchain.
+ *
+ * Se deduce del prefijo de la dirección en vez de asumir siempre la red activa:
+ * `l1ScriptForAddress` rechaza el HRP equivocado y una salida a una dirección
+ * `bcrt1…` (regtest de CI) no se puede ni cotizar con los parámetros de
+ * testnet. El script resultante es idéntico entre redes; el prefijo solo sirve
+ * para decodificar la dirección.
+ */
+export function onchainNetworkOf(address: string): OnchainNetwork {
+  const lower = address.toLowerCase();
+  if (lower.startsWith('bcrt1')) return 'regtest';
+  if (lower.startsWith('bc1') || lower.startsWith('1') || lower.startsWith('3')) {
+    return 'bitcoin';
+  }
+  if (lower.startsWith('tb1') || /^[mn2]/.test(address)) return 'testnet';
+  return ACTIVE_NETWORK.isMainnet ? 'bitcoin' : 'testnet';
+}
 
 const toHex = (bytes: Uint8Array): string =>
   Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
@@ -79,15 +94,40 @@ export type SendOnchainResult = {
 };
 
 /**
- * Planifica la salida sin tocar la red más allá de leer saldo y comisiones.
- * Se separa de `settle` para poder validar la comisión máxima antes de firmar
- * y para mostrar el coste real en la pantalla de envío.
+ * Cotiza la salida sin aplicar ningún techo de comisión. La pantalla la usa
+ * para enseñar el coste real antes de pedir al usuario que suba su máximo.
+ */
+export async function quoteCollaborativeExit(
+  wallet: IWallet,
+  destination: string,
+  amountSats: number
+): Promise<CollaborativeExitPlan> {
+  return buildCollaborativeExit(wallet, destination, amountSats);
+}
+
+/**
+ * Planifica la salida y rechaza si la comisión supera `maxFeeSats`. Se separa
+ * de `settle` para validar antes de firmar.
  */
 export async function planCollaborativeExit(
   wallet: IWallet,
   destination: string,
   amountSats: number,
   maxFeeSats: number
+): Promise<CollaborativeExitPlan> {
+  const plan = await buildCollaborativeExit(wallet, destination, amountSats);
+  if (plan.feeSats > maxFeeSats) {
+    throw new Error(
+      `La salida onchain cuesta ${plan.feeSats} sats de comisión y el máximo es ${maxFeeSats}.`
+    );
+  }
+  return plan;
+}
+
+async function buildCollaborativeExit(
+  wallet: IWallet,
+  destination: string,
+  amountSats: number
 ): Promise<CollaborativeExitPlan> {
   if (!Number.isSafeInteger(amountSats) || amountSats <= 0) {
     throw new Error('Indica cuántos sats quieres enviar onchain.');
@@ -125,7 +165,7 @@ export async function planCollaborativeExit(
 
   // Comisión que el operador cobra por crear la salida onchain.
   const outputScript = toHex(
-    l1ScriptForAddress(destination, onchainNetwork())
+    l1ScriptForAddress(destination, onchainNetworkOf(destination))
   );
   const exitFee = estimator.evalOnchainOutput({
     amount: BigInt(amountSats),
@@ -148,7 +188,10 @@ export async function planCollaborativeExit(
       (a, b) =>
         Number(Boolean(a.vtxo.assets?.length)) -
           Number(Boolean(b.vtxo.assets?.length)) ||
-        Number(a.inputFee > 0) - Number(b.inputFee > 0) ||
+        // Menor número de inputs = menor comisión. Los outputs con más valor
+        // neto van primero; el vencimiento solo desempata para no dejar
+        // expirar los que estaban a punto.
+        b.vtxo.value - b.inputFee - (a.vtxo.value - a.inputFee) ||
         byExpiryAsc(a.vtxo, b.vtxo)
     );
 
@@ -170,11 +213,6 @@ export async function planCollaborativeExit(
       const change = outputAfterItsFee(estimator, ownAddress, left);
       if (change > 0 && change >= dust) {
         const feeSats = inputFees + exitFee + left - change;
-        if (feeSats > maxFeeSats) {
-          throw new Error(
-            `La salida onchain cuesta ${feeSats} sats de comisión y el máximo es ${maxFeeSats}.`
-          );
-        }
         return {
           inputs,
           outputs: [
@@ -189,11 +227,6 @@ export async function planCollaborativeExit(
     if (carriesAssets) continue;
 
     const feeSats = inputFees + exitFee + left;
-    if (feeSats > maxFeeSats) {
-      throw new Error(
-        `La salida onchain cuesta ${feeSats} sats de comisión y el máximo es ${maxFeeSats}.`
-      );
-    }
     return {
       inputs,
       outputs: [{ address: destination, amount: BigInt(amountSats) }],
@@ -238,5 +271,100 @@ export async function sendCollaborativeExit(
     txid,
     feeSats: plan.feeSats,
     changeSats: plan.changeSats,
+  };
+}
+
+export type ConsolidationPlan = {
+  inputs: NormalizedExtendedVirtualCoin[];
+  outputs: { address: string; amount: bigint }[];
+  /** Comisión total: intent fee de cada input + fee del output consolidado. */
+  feeSats: number;
+  /** Sats que quedan en el único output consolidado. */
+  outputSats: number;
+  inputCount: number;
+};
+
+/**
+ * Consolida los VTXOs gastables en uno solo.
+ *
+ * No abarata un offboard inmediato: añade una ronda de settlement. Sirve para
+ * reiniciar la profundidad de la rama (salida unilateral más barata) y para
+ * evitar que el próximo pago tenga que gastar muchos inputs pequeños. No toca
+ * outputs con assets: el activo viaja en su propio VTXO y no debe mezclarse.
+ */
+export async function planVtxoConsolidation(
+  wallet: IWallet
+): Promise<ConsolidationPlan> {
+  const [vtxos, info, ownAddress] = await Promise.all([
+    wallet.getSpendableVtxos({
+      withRecoverable: false,
+      genericallySpendableOnly: true,
+    }),
+    wallet.getOperatorInfo(),
+    wallet.getAddress(),
+  ]);
+
+  const estimator = new Estimator(info.fees?.intentFee ?? {});
+  const dust = Number(info.dust ?? 0);
+  const priced = vtxos
+    .filter(vtxo => !vtxo.assets?.length)
+    .map(vtxo => ({
+      vtxo,
+      inputFee: estimator.evalOffchainInput({
+        amount: BigInt(vtxo.value),
+        type: 'vtxo',
+        weight: 0,
+        birth: vtxo.createdAt,
+        expiry: vtxo.expiresAt,
+      }).satoshis,
+    }))
+    .filter(({ vtxo, inputFee }) => inputFee < vtxo.value);
+
+  if (priced.length < 2) {
+    throw new Error(
+      'No hay al menos dos VTXOs sin activos que merezca la pena consolidar.'
+    );
+  }
+
+  const inputFees = priced.reduce((sum, item) => sum + item.inputFee, 0);
+  const net = priced.reduce(
+    (sum, { vtxo, inputFee }) => sum + vtxo.value - inputFee,
+    0
+  );
+  const outputSats = outputAfterItsFee(estimator, ownAddress, net);
+  if (outputSats <= 0 || outputSats < dust) {
+    throw new Error(
+      `La consolidación dejaría ${Math.max(
+        0,
+        outputSats
+      )} sats, por debajo del mínimo del operador (${dust} sats).`
+    );
+  }
+
+  return {
+    inputs: priced.map(({ vtxo }) => vtxo),
+    outputs: [{ address: ownAddress, amount: BigInt(outputSats) }],
+    feeSats: inputFees + (net - outputSats),
+    outputSats,
+    inputCount: priced.length,
+  };
+}
+
+export async function consolidateVtxos(wallet: IWallet): Promise<{
+  txid: string;
+  feeSats: number;
+  outputSats: number;
+  inputCount: number;
+}> {
+  const plan = await planVtxoConsolidation(wallet);
+  const txid = await wallet.settle({
+    inputs: plan.inputs,
+    outputs: plan.outputs,
+  });
+  return {
+    txid,
+    feeSats: plan.feeSats,
+    outputSats: plan.outputSats,
+    inputCount: plan.inputCount,
   };
 }

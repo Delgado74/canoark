@@ -1,0 +1,23 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - arkade
+      - dependencies
+    commit-message:
+      prefix: chore(deps)
+    open-pull-requests-limit: 5
+    # Sin auto-merge: cada subida pasa por test.yml y, si toca Arkade,
+    # por la suite regtest con la etiqueta `arkade`.
+    groups:
+      arkade:
+        patterns:
+          - '@arkade-os/*'
+          - 'nostr-tools'
+          - 'light-bolt11-decoder'
+          - '@noble/*'
+          - '@scure/*'

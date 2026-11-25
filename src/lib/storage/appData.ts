@@ -58,6 +58,21 @@ const CASH_SCHEMA = `
   );
 `;
 
+const EXIT_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS exit_packages (
+    id TEXT PRIMARY KEY NOT NULL,
+    network TEXT NOT NULL,
+    package_json TEXT NOT NULL,
+    sweep_address TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    valid_until INTEGER,
+    tx_count INTEGER NOT NULL,
+    total_fee_sats INTEGER NOT NULL,
+    funding_required_sats INTEGER NOT NULL,
+    recovered_sats INTEGER NOT NULL
+  );
+`;
+
 const INIT_SQL = `
   PRAGMA journal_mode = WAL;
   CREATE TABLE IF NOT EXISTS tx_notes (
@@ -72,6 +87,7 @@ const INIT_SQL = `
     UNIQUE(network, ref_key)
   );
   ${CASH_SCHEMA}
+  ${EXIT_SCHEMA}
 `;
 
 let database: SQLite.SQLiteDatabase | null = null;
@@ -426,6 +442,117 @@ export async function deleteCashToken(token: string): Promise<void> {
   await db().runAsync(
     'DELETE FROM cash_tokens WHERE network = ? AND token_hash = ?',
     [ACTIVE_NETWORK.name, tokenHash(token.trim())]
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Planes de salida unilateral                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Paquete prefirmado para salir de Arkade sin el operador. No contiene la
+ * semilla: solo transacciones que pagan a `sweepAddress`. Aun así es sensible,
+ * porque cualquiera que lo tenga puede difundirlo (no redirigir los fondos).
+ */
+export type StoredExitPackage = {
+  id: string;
+  envelope: string;
+  sweepAddress: string;
+  createdAt: number;
+  /** Vencimiento del batch, en segundos unix. `null` si el SDK no lo conoce. */
+  validUntil: number | null;
+  txCount: number;
+  totalFeeSats: number;
+  fundingRequiredSats: number;
+  recoveredSats: number;
+};
+
+type ExitRow = {
+  id: string;
+  package_json: string;
+  sweep_address: string;
+  created_at: number;
+  valid_until: number | null;
+  tx_count: number;
+  total_fee_sats: number;
+  funding_required_sats: number;
+  recovered_sats: number;
+};
+
+const toExitPackage = (row: ExitRow): StoredExitPackage => ({
+  id: row.id,
+  envelope: row.package_json,
+  sweepAddress: row.sweep_address,
+  createdAt: row.created_at,
+  validUntil: row.valid_until,
+  txCount: row.tx_count,
+  totalFeeSats: row.total_fee_sats,
+  fundingRequiredSats: row.funding_required_sats,
+  recoveredSats: row.recovered_sats,
+});
+
+export async function saveExitPackage(params: {
+  envelope: string;
+  sweepAddress: string;
+  validUntil: number | null;
+  txCount: number;
+  totalFeeSats: number;
+  fundingRequiredSats: number;
+  recoveredSats: number;
+}): Promise<StoredExitPackage> {
+  const envelope = params.envelope.trim();
+  if (!envelope) throw new Error('El paquete de salida está vacío.');
+
+  const row: StoredExitPackage = {
+    id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+    envelope,
+    sweepAddress: params.sweepAddress,
+    createdAt: Date.now(),
+    validUntil: params.validUntil,
+    txCount: params.txCount,
+    totalFeeSats: params.totalFeeSats,
+    fundingRequiredSats: params.fundingRequiredSats,
+    recoveredSats: params.recoveredSats,
+  };
+
+  await db().runAsync(
+    `INSERT INTO exit_packages
+       (id, network, package_json, sweep_address, created_at, valid_until,
+        tx_count, total_fee_sats, funding_required_sats, recovered_sats)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      row.id,
+      ACTIVE_NETWORK.name,
+      row.envelope,
+      row.sweepAddress,
+      row.createdAt,
+      row.validUntil,
+      row.txCount,
+      row.totalFeeSats,
+      row.fundingRequiredSats,
+      row.recoveredSats,
+    ]
+  );
+
+  return row;
+}
+
+export async function listExitPackages(): Promise<StoredExitPackage[]> {
+  const rows = await db().getAllAsync<ExitRow>(
+    `SELECT id, package_json, sweep_address, created_at, valid_until,
+            tx_count, total_fee_sats, funding_required_sats, recovered_sats
+       FROM exit_packages
+      WHERE network = ?
+      ORDER BY created_at DESC`,
+    [ACTIVE_NETWORK.name]
+  );
+  return rows.map(toExitPackage);
+}
+
+export async function deleteExitPackage(id: string): Promise<void> {
+  await db().runAsync(
+    'DELETE FROM exit_packages WHERE network = ? AND id = ?',
+    [ACTIVE_NETWORK.name, id]
   );
 }
 

@@ -1,9 +1,11 @@
 import {
   contractSigner,
   EsploraProvider,
+  OnchainWallet,
   RestDelegateProvider,
   Wallet,
   type IVtxoManager,
+  type NetworkName,
 } from '@arkade-os/sdk';
 import {
   ExpoIndexerProvider,
@@ -21,7 +23,7 @@ import {
   type OnchainNetwork,
   type OnchainSendSwap,
 } from '@arkade-os/swap/protocol';
-import { ACTIVE_NETWORK } from '../../constants/network';
+import { ACTIVE_NETWORK, type NetworkConfig } from '../../constants/network';
 import { openStorage, type AppStorage } from '../storage/sqlite';
 import { identityFromMnemonic } from './identity';
 import { selectSwapMarket } from './marketSelection';
@@ -32,6 +34,11 @@ export type ArkadeSession = {
   wallet: Wallet;
   swaps: SwapClient;
   storage: AppStorage;
+  /**
+   * Wallet onchain derivada de la misma semilla. No es la dirección de
+   * boarding: su P2TR es la que paga las comisiones de una salida unilateral.
+   */
+  onchainWallet: OnchainWallet;
   /**
    * Manager de liquidación. Su construcción arranca el poll que convierte los
    * depósitos onchain (boarding) en saldo Arkade y renueva los VTXOs.
@@ -335,27 +342,41 @@ function createOnchainClaim(
 }
 
 /**
+ * Fronteras de red sustituibles solo por los tests de integración. La app
+ * siempre usa `ACTIVE_NETWORK` (inlineado al compilar); el regtest de CI necesita
+ * apuntar los mismos providers a localhost sin reconstruir el bundle.
+ */
+export type ArkadeSessionOverrides = Partial<
+  Pick<
+    NetworkConfig,
+    'operatorUrl' | 'indexerUrl' | 'esploraUrl' | 'delegateUrl' | 'solverRegistryUrl'
+  >
+> & { swapNetwork?: NetworkName };
+
+/**
  * Abre la wallet de Arkade y el swap client. Una sola instancia por proceso:
  * el swap client reclama y reembolsa swaps solo mientras sigue vivo.
  */
 export async function openArkadeSession(
   mnemonic: string,
-  walletMode: WalletMode = 'static'
+  walletMode: WalletMode = 'static',
+  overrides: ArkadeSessionOverrides = {}
 ): Promise<ArkadeSession> {
   await closeArkadeSession();
   onchainClaimErrors.clear();
 
+  const network = { ...ACTIVE_NETWORK, ...overrides };
   const storage = openStorage();
   let wallet: Wallet | null = null;
 
   try {
-    const onchainProvider = new EsploraProvider(ACTIVE_NETWORK.esploraUrl);
+    const onchainProvider = new EsploraProvider(network.esploraUrl);
 
     wallet = await Wallet.create({
       identity: identityFromMnemonic(mnemonic),
       // En Expo no hay EventSource: estos providers usan expo/fetch para SSE.
-      operatorProvider: new ExpoOperatorProvider(ACTIVE_NETWORK.operatorUrl),
-      indexerProvider: new ExpoIndexerProvider(ACTIVE_NETWORK.indexerUrl),
+      operatorProvider: new ExpoOperatorProvider(network.operatorUrl),
+      indexerProvider: new ExpoIndexerProvider(network.indexerUrl),
       // Sin un onchain provider explícito, los depósitos al boarding dependen
       // del Esplora por defecto del SDK. Lo fijamos al de la red activa para
       // que getBoardingUtxos() consulte siempre el explorador correcto.
@@ -365,8 +386,8 @@ export async function openArkadeSession(
       // recepción (BIP86) y vigila la ventana anterior; `static` mantiene una
       // única dirección, como las instalaciones antiguas.
       walletMode,
-      ...(ACTIVE_NETWORK.delegateUrl
-        ? { delegateProvider: new RestDelegateProvider(ACTIVE_NETWORK.delegateUrl) }
+      ...(network.delegateUrl
+        ? { delegateProvider: new RestDelegateProvider(network.delegateUrl) }
         : {}),
       // Renueva virtual outputs que expiran dentro de 3 días y barre los
       // depósitos onchain confirmados para convertirlos en saldo Arkade.
@@ -378,6 +399,13 @@ export async function openArkadeSession(
     });
 
     const createdWallet = wallet;
+    // Misma identidad, red Bitcoin real. Esta P2TR es independiente de la
+    // dirección de boarding y solo se usa para financiar salidas unilaterales.
+    const onchainWallet = await OnchainWallet.create(
+      createdWallet.identity,
+      network.swapNetwork as NetworkName,
+      onchainProvider
+    );
     const onchainClaim = createOnchainClaim(
       createdWallet,
       onchainProvider,
@@ -394,7 +422,9 @@ export async function openArkadeSession(
       repository: storage.swapRepository,
       // Registro de solvers, tarjetas publicadas por Nostr y tarjetas locales.
       // En mainnet el registro está vacío y Lightning lo aporta la tarjeta del build.
-      discovery: solverDiscoveryOptions(ACTIVE_NETWORK),
+      discovery: solverDiscoveryOptions(
+        network as Pick<NetworkConfig, 'swapNetwork' | 'solverRegistryUrl'>
+      ),
       // El registro puede publicar varias tarjetas para el mismo par; sin esta
       // política el cliente se queda con la primera y una tarjeta RFQ obsoleta
       // responde `unsupported_pair` aunque el mercado de precio sí cotice.
@@ -415,7 +445,7 @@ export async function openArkadeSession(
     // guardado y los depósitos onchain nunca se barajan a saldo Arkade.
     const vtxoManager = await wallet.getVtxoManager();
 
-    session = { wallet, swaps, storage, vtxoManager };
+    session = { wallet, swaps, storage, onchainWallet, vtxoManager };
     return session;
   } catch (err) {
     await wallet?.dispose().catch(() => undefined);

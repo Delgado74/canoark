@@ -1,0 +1,59 @@
+name: Arkade integration (regtest)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regtest:
+    name: Real arkd against the pinned stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # El stack tarda minutos y consume imágenes: solo PRs de dependencias Arkade
+    # y antes de publicar una release.
+    if: >-
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'arkade')
+
+    steps:
+      - name: Checkout CanoArk
+        uses: actions/checkout@v4
+
+      - name: Checkout pinned arkade-regtest
+        uses: actions/checkout@v4
+        with:
+          repository: ArkLabsHQ/arkade-regtest
+          # Submódulo que fija ts-sdk en @arkade-os/sdk/0.5.13.
+          ref: 666fccb2910b7569621cacc7a9e59a946bd8cfe6
+          path: arkade-regtest
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Start regtest stack
+        run: node arkade-regtest/regtest.mjs start --env test/e2e/regtest.env --profile ark
+
+      - name: Regtest suite
+        run: npm run test:regtest
+        env:
+          ARKADE_REGTEST_DIR: ${{ github.workspace }}/arkade-regtest
+
+      - name: Stop regtest stack
+        if: always()
+        run: node arkade-regtest/regtest.mjs stop

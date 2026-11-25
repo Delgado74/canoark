@@ -17,6 +17,8 @@ import {
   hasBoardingTxExpired,
   type ArkadeCashClaimResult,
   type ArkTransaction,
+  type ExecutorEvent,
+  type ExitQuote,
   type ExtendedCoin,
   type NormalizedExtendedVirtualCoin,
   type RelativeTimelock,
@@ -48,7 +50,25 @@ import {
   receiveLightning,
   watchSwap,
 } from '../lib/arkade/lightning';
-import { sendCollaborativeExit } from '../lib/arkade/offboard';
+import {
+  consolidateVtxos as consolidateWalletVtxos,
+  planVtxoConsolidation,
+  quoteCollaborativeExit,
+  sendCollaborativeExit,
+  type CollaborativeExitPlan,
+  type ConsolidationPlan,
+} from '../lib/arkade/offboard';
+import {
+  estimateExit,
+  executeExitPackage as runExitPackage,
+  prepareExit,
+} from '../lib/arkade/exit';
+import {
+  deleteExitPackage as deleteStoredExitPackage,
+  listExitPackages as listStoredExitPackages,
+  saveExitPackage,
+  type StoredExitPackage,
+} from '../lib/storage/appData';
 import { bareAssetId } from '../lib/arkade/assetInfo';
 import { wipeStorageDatabases } from '../lib/storage/sqlite';
 import {
@@ -180,6 +200,38 @@ type WalletContextValue = {
     nextPassphrase: string,
     useBiometrics: boolean
   ) => Promise<ChangePassphraseResult>;
+  /** Cotiza una salida onchain sin aplicar el techo de comisión. */
+  quoteOnchainSend: (
+    destination: string,
+    amountSats: number
+  ) => Promise<CollaborativeExitPlan>;
+  /** Dirección P2TR de la misma semilla que paga los fees de una salida unilateral. */
+  getExitWallet: () => Promise<{ address: string; balanceSats: number }>;
+  /** Cotiza el unroll + sweep de todos los VTXOs gastables. */
+  estimateUnilateralExit: (sweepAddress?: string) => Promise<ExitQuote>;
+  /** Prefirma el paquete de salida y lo guarda en este dispositivo. */
+  prepareUnilateralExit: (sweepAddress?: string) => Promise<StoredExitPackage>;
+  listExitPackages: () => Promise<StoredExitPackage[]>;
+  deleteExitPackage: (id: string) => Promise<void>;
+  /** Ejecuta un paquete con el executor sin claves; se puede reanudar. */
+  executeExitPackage: (
+    stored: StoredExitPackage,
+    onEvent?: (event: ExecutorEvent) => void,
+    signal?: AbortSignal
+  ) => Promise<void>;
+  quoteVtxoConsolidation: () => Promise<ConsolidationPlan>;
+  consolidateVtxos: () => Promise<{
+    txid: string;
+    feeSats: number;
+    outputSats: number;
+    inputCount: number;
+  }>;
+  recoverVtxos: () => Promise<{
+    txid: string;
+    recoverableSats: bigint;
+    subdustSats: bigint;
+    vtxoCount: number;
+  }>;
   /** Último pago entrante detectado, o `null` si no hay aviso pendiente. */
   receivedPayment: ReceivedPayment | null;
   /** Cierra el aviso de pago recibido. */
@@ -267,6 +319,9 @@ const vtxoStatus = (vtxo: NormalizedExtendedVirtualCoin): CoinView['status'] => 
   if (vtxo.isSpent) return 'spent';
   if (vtxo.isSwept) return 'swept';
   if (vtxo.isPreconfirmed) return 'preconfirmed';
+  if (vtxo.expiresAt && vtxo.expiresAt.getTime() <= Date.now()) {
+    return 'recoverable';
+  }
   return 'settled';
 };
 
@@ -890,6 +945,115 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     return amount;
   }, [ensureSession, refresh]);
 
+  const quoteOnchainSend = useCallback(
+    async (destination: string, amountSats: number) => {
+      const session = await ensureSession();
+      const target = destination.trim();
+      if (!target) throw new Error('Indica una dirección onchain.');
+      return quoteCollaborativeExit(
+        session.wallet,
+        target,
+        Math.floor(amountSats)
+      );
+    },
+    [ensureSession]
+  );
+
+  const getExitWallet = useCallback(async () => {
+    const session = await ensureSession();
+    const balanceSats = await session.onchainWallet.getBalance();
+    return { address: session.onchainWallet.address, balanceSats };
+  }, [ensureSession]);
+
+  const estimateUnilateralExit = useCallback(
+    async (sweepAddress?: string) => {
+      const session = await ensureSession();
+      const target = sweepAddress?.trim() || session.onchainWallet.address;
+      return estimateExit({
+        wallet: session.wallet,
+        onchainWallet: session.onchainWallet,
+        sweepAddress: target,
+      });
+    },
+    [ensureSession]
+  );
+
+  const prepareUnilateralExit = useCallback(
+    async (sweepAddress?: string) => {
+      const session = await ensureSession();
+      const target = sweepAddress?.trim() || session.onchainWallet.address;
+      const { package: pkg, envelope } = await prepareExit({
+        wallet: session.wallet,
+        onchainWallet: session.onchainWallet,
+        sweepAddress: target,
+      });
+      return saveExitPackage({
+        envelope,
+        sweepAddress: target,
+        validUntil: pkg.validUntil ?? null,
+        txCount: pkg.totals.txCount,
+        totalFeeSats: pkg.totals.totalFeeSats,
+        fundingRequiredSats: pkg.totals.fundingRequiredSats,
+        recoveredSats: pkg.totals.recoveredSats,
+      });
+    },
+    [ensureSession]
+  );
+
+  const listExitPackages = useCallback(() => listStoredExitPackages(), []);
+
+  const deleteExitPackage = useCallback(
+    (id: string) => deleteStoredExitPackage(id),
+    []
+  );
+
+  const executeExitPackage = useCallback(
+    async (
+      stored: StoredExitPackage,
+      onEvent?: (event: ExecutorEvent) => void,
+      signal?: AbortSignal
+    ) => {
+      const session = await ensureSession();
+      await runExitPackage({
+        envelope: stored.envelope,
+        provider: session.onchainWallet.provider,
+        feeWallet: session.onchainWallet,
+        onEvent,
+        signal,
+      });
+      await refresh();
+    },
+    [ensureSession, refresh]
+  );
+
+  const quoteVtxoConsolidation = useCallback(async () => {
+    const session = await ensureSession();
+    return planVtxoConsolidation(session.wallet);
+  }, [ensureSession]);
+
+  const consolidateVtxos = useCallback(async () => {
+    const session = await ensureSession();
+    const result = await consolidateWalletVtxos(session.wallet);
+    await refresh();
+    return result;
+  }, [ensureSession, refresh]);
+
+  const recoverVtxos = useCallback(async () => {
+    const session = await ensureSession();
+    const before = await session.vtxoManager.getRecoverableBalance();
+    if (before.recoverable <= 0n && before.subdust <= 0n) {
+      throw new Error('No hay VTXOs recuperables ni polvo que liquidar.');
+    }
+    const txid = await session.vtxoManager.recoverVtxos();
+    await refresh();
+    return {
+      txid,
+      recoverableSats: before.recoverable,
+      subdustSats: before.subdust,
+      vtxoCount: before.vtxoCount,
+    };
+  }, [ensureSession, refresh]);
+
   const changePassphrase = useCallback(
     async (
       currentPassphrase: string,
@@ -1041,6 +1205,16 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     claimCash,
     applyWalletMode,
     settleBoarding,
+    quoteOnchainSend,
+    getExitWallet,
+    estimateUnilateralExit,
+    prepareUnilateralExit,
+    listExitPackages,
+    deleteExitPackage,
+    executeExitPackage,
+    quoteVtxoConsolidation,
+    consolidateVtxos,
+    recoverVtxos,
     changePassphrase,
     receivedPayment,
     dismissReceivedPayment: () => setReceivedPayment(null),
