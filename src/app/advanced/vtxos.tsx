@@ -3,6 +3,7 @@ import { Alert, StyleSheet, Text, View } from 'react-native';
 import {
   Badge,
   Button,
+  Card,
   ErrorBanner,
   Notice,
   Paragraph,
@@ -14,7 +15,8 @@ import { colors, spacing } from '../../constants/theme';
 import { useWallet } from '../../hooks/useWallet';
 import { usePreferences } from '../../hooks/usePreferences';
 import type { CoinView } from '../../types/wallet';
-import { errorMessage } from '../../lib/format';
+import type { ConsolidationPlan } from '../../lib/arkade/offboard';
+import { errorMessage, formatSats } from '../../lib/format';
 
 const STATUS_LABEL: Record<CoinView['status'], string> = {
   settled: 'Liquidado',
@@ -50,6 +52,9 @@ export default function VtxosScreen() {
     coinsLoaded,
     loadCoins,
     settleBoarding,
+    quoteVtxoConsolidation,
+    consolidateVtxos,
+    recoverVtxos,
     status,
     balance,
     boardingAddress,
@@ -58,6 +63,11 @@ export default function VtxosScreen() {
   const { formatBitcoin } = usePreferences();
   const [busy, setBusy] = useState(false);
   const [settling, setSettling] = useState(false);
+  const [quotingConsolidation, setQuotingConsolidation] = useState(false);
+  const [consolidating, setConsolidating] = useState(false);
+  const [recovering, setRecovering] = useState(false);
+  const [consolidation, setConsolidation] =
+    useState<ConsolidationPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -120,6 +130,61 @@ export default function VtxosScreen() {
     }
   };
 
+  const quoteConsolidation = async () => {
+    setQuotingConsolidation(true);
+    setError(null);
+    try {
+      setConsolidation(await quoteVtxoConsolidation());
+    } catch (err) {
+      setConsolidation(null);
+      setError(errorMessage(err));
+    } finally {
+      setQuotingConsolidation(false);
+    }
+  };
+
+  const consolidate = async () => {
+    if (!consolidation) return;
+    setConsolidating(true);
+    setError(null);
+    try {
+      const result = await consolidateVtxos();
+      setConsolidation(null);
+      await loadCoins();
+      Alert.alert(
+        'VTXOs consolidados',
+        `${result.inputCount} monedas se unieron en una de ${formatBitcoin(
+          result.outputSats
+        )}. La comisión fue de ${formatSats(result.feeSats)} sats.`
+      );
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setConsolidating(false);
+    }
+  };
+
+  const recover = async () => {
+    setRecovering(true);
+    setError(null);
+    try {
+      const result = await recoverVtxos();
+      await loadCoins();
+      Alert.alert(
+        'Saldo recuperado',
+        `Se liquidaron ${result.vtxoCount} VTXOs recuperables${
+          result.subdustSats > 0n
+            ? `, incluidos ${formatSats(Number(result.subdustSats))} sats de polvo`
+            : ''
+        }.`
+      );
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setRecovering(false);
+    }
+  };
+
   return (
     <SettingsScreen
       title="Monedas virtuales"
@@ -134,10 +199,64 @@ export default function VtxosScreen() {
       <Row label="VTXOs activos" value={`${virtual.length}`} />
       <Row label="Total VTXOs" value={formatBitcoin(totalVirtual)} />
       <Row label="UTXOs de boarding" value={formatBitcoin(totalBoarding)} />
+      <Row
+        label="Recuperable / polvo"
+        value={balance ? formatBitcoin(balance.recoverable) : '—'}
+      />
       <Row label="Dirección onchain" value={boardingAddress ?? '—'} mono />
       <Row label="Esplora" value={network.esploraUrl} mono />
 
       {error ? <ErrorBanner message={error} /> : null}
+
+      <SectionLabel>Optimizar</SectionLabel>
+      {consolidation ? (
+        <Card title="Consolidar VTXOs">
+          <Row label="Monedas" value={String(consolidation.inputCount)} />
+          <Row
+            label="Quedaría"
+            value={`${formatSats(consolidation.outputSats)} sats`}
+          />
+          <Row
+            label="Comisión"
+            value={`${formatSats(consolidation.feeSats)} sats`}
+          />
+          <Paragraph muted>
+            Reinicia la profundidad de la cadena, pero no abarata un envío
+            onchain inmediato: añade una ronda de settlement.
+          </Paragraph>
+          <Button
+            title="Consolidar ahora"
+            onPress={() => void consolidate()}
+            loading={consolidating}
+          />
+          <Button
+            title="Cancelar"
+            variant="ghost"
+            onPress={() => setConsolidation(null)}
+            disabled={consolidating}
+          />
+        </Card>
+      ) : (
+        <Button
+          title="Calcular consolidación"
+          variant="secondary"
+          onPress={() => void quoteConsolidation()}
+          loading={quotingConsolidation}
+          disabled={quotingConsolidation || busy}
+        />
+      )}
+      <Button
+        title="Recuperar VTXOs vencidos o polvo"
+        variant="secondary"
+        onPress={() => void recover()}
+        loading={recovering}
+        disabled={recovering}
+      />
+      <Notice tone="info">
+        Consolidar reduce el número de inputs y acorta la rama de salida
+        unilateral, pero cuesta una ronda. Hazlo mientras el operador esté
+        disponible; si ya cayó, solo queda el plan de salida.
+      </Notice>
 
       <SectionLabel>Virtual outputs</SectionLabel>
       {virtual.length === 0 ? (

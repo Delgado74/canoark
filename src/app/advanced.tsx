@@ -36,8 +36,14 @@ export default function AdvancedSettingsScreen() {
         <MenuRow
           icon="🤝"
           label="Delegados"
-          value={network.delegateUrl ? 'Delegación activa' : 'Desactivado'}
+          value={network.delegateUrl ? 'Configurado' : 'Desactivado'}
           onPress={() => router.push('/advanced/delegates')}
+        />
+        <MenuRow
+          icon="🪂"
+          label="Salida unilateral"
+          value="Plan de emergencia"
+          onPress={() => router.push('/advanced/exit')}
         />
         <MenuRow
           icon="🛰"

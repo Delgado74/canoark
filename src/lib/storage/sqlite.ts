@@ -55,6 +55,13 @@ export function openStorage() {
     // Guarda las ramas de salida de cada output virtual. Sin esto, una salida
     // unilateral depende por completo del indexer.
     virtualTxRepository: new SQLiteVirtualTxRepository(walletExecutor),
+    // "full" guarda también los PSBT de la rama, para poder preparar la salida
+    // aunque el indexer no esté disponible. Los outputs por debajo del umbral
+    // no compensan el coste de una salida y se omiten.
+    exitDataCapture: {
+      mode: 'full' as const,
+      minExitWorthSats: 1000,
+    },
   };
 
   const swapRepository = new SQLiteAssetSwapRepository(swapExecutor);

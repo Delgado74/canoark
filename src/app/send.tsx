@@ -22,6 +22,7 @@ import { useWallet } from '../hooks/useWallet';
 import { usePreferences } from '../hooks/usePreferences';
 import { bareAssetId } from '../lib/arkade/assetInfo';
 import { formatUnits, parseUnits } from '../lib/arkade/assets';
+import type { CollaborativeExitPlan } from '../lib/arkade/offboard';
 import {
   arkadeExplorerTxUrl,
   onchainExplorerTxUrl,
@@ -93,6 +94,7 @@ export default function SendScreen() {
   const {
     sendPayment,
     sendAsset,
+    quoteOnchainSend,
     watchOutcome,
     balance,
     refresh,
@@ -119,6 +121,9 @@ export default function SendScreen() {
   const [maxFee, setMaxFee] = useState('500');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const [quoting, setQuoting] = useState(false);
+  const [onchainQuote, setOnchainQuote] =
+    useState<CollaborativeExitPlan | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [result, setResult] = useState<SendResult | null>(null);
@@ -160,6 +165,7 @@ export default function SendScreen() {
     setResult(null);
     setLocalError(null);
     setErrorDetails(null);
+    setOnchainQuote(null);
     const next = parseDestination(value);
     if (!assetMode && next.amountSats && next.amountSats > 0) {
       setAmount(String(next.amountSats));
@@ -230,12 +236,43 @@ export default function SendScreen() {
     return null;
   };
 
-  const review = () => {
+  const review = async () => {
     const problem = validate();
     if (problem) {
       setLocalError(problem);
       return;
     }
+
+    if (kind === 'onchain') {
+      setQuoting(true);
+      setErrorDetails(null);
+      try {
+        const quote = await quoteOnchainSend(
+          parsed.raw || destination.trim(),
+          amountSats
+        );
+        setOnchainQuote(quote);
+        if (quote.feeSats > feeSats) {
+          setLocalError(
+            `La comisión estimada es ${formatSats(
+              quote.feeSats
+            )} sats y el máximo es ${formatSats(
+              feeSats
+            )}. Sube el máximo para continuar.`
+          );
+          return;
+        }
+      } catch (err) {
+        setOnchainQuote(null);
+        setLocalError(errorMessage(err));
+        return;
+      } finally {
+        setQuoting(false);
+      }
+    } else {
+      setOnchainQuote(null);
+    }
+
     setLocalError(null);
     setStage('confirm');
   };
@@ -334,6 +371,7 @@ export default function SendScreen() {
     setNote('');
     setResult(null);
     setLocalError(null);
+    setOnchainQuote(null);
   };
 
   /* ---------------------------------------------------------------- */
@@ -522,6 +560,24 @@ export default function SendScreen() {
                 : `${formatSats(feeSats)} sats`
             }
           />
+          {kind === 'onchain' && onchainQuote ? (
+            <>
+              <Row
+                label="VTXOs usados"
+                value={String(onchainQuote.inputs.length)}
+              />
+              <Row
+                label="Comisión estimada"
+                value={`${formatSats(onchainQuote.feeSats)} sats`}
+              />
+              {onchainQuote.changeSats > 0 ? (
+                <Row
+                  label="Cambio"
+                  value={`${formatSats(onchainQuote.changeSats)} sats`}
+                />
+              ) : null}
+            </>
+          ) : null}
           <Row label="Red" value={network.label} />
           <Row
             label="Saldo disponible"
@@ -657,7 +713,10 @@ export default function SendScreen() {
         <Field
           label={assetMode ? `Cantidad (${assetTicker})` : 'Importe (sats)'}
           value={amount}
-          onChangeText={setAmount}
+          onChangeText={value => {
+            setAmount(value);
+            setOnchainQuote(null);
+          }}
           placeholder="0"
           keyboardType={assetMode ? 'decimal-pad' : 'number-pad'}
           editable={kind !== 'lightning' || !invoiceHasAmount}
@@ -696,7 +755,10 @@ export default function SendScreen() {
                 : 'Comisión máxima del solver (sats)'
             }
             value={maxFee}
-            onChangeText={setMaxFee}
+            onChangeText={value => {
+              setMaxFee(value);
+              setLocalError(null);
+            }}
             placeholder="500"
             keyboardType="number-pad"
             hint={
@@ -705,6 +767,40 @@ export default function SendScreen() {
                 : 'Se rechaza el pago antes de mover fondos si el solver pide más.'
             }
           />
+        ) : null}
+
+        {kind === 'onchain' && onchainQuote ? (
+          <Card
+            title="Salida onchain"
+            subtitle="Estimación del operador para este importe"
+          >
+            <Row
+              label="VTXOs necesarios"
+              value={String(onchainQuote.inputs.length)}
+            />
+            <Row
+              label="Comisión estimada"
+              value={`${formatSats(onchainQuote.feeSats)} sats`}
+            />
+            {onchainQuote.changeSats > 0 ? (
+              <Row
+                label="Cambio"
+                value={`${formatSats(onchainQuote.changeSats)} sats`}
+              />
+            ) : null}
+            {onchainQuote.feeSats > feeSats ? (
+              <Button
+                title={`Usar ${formatSats(
+                  onchainQuote.feeSats
+                )} sats como máximo`}
+                variant="secondary"
+                onPress={() => {
+                  setMaxFee(String(onchainQuote.feeSats));
+                  setLocalError(null);
+                }}
+              />
+            ) : null}
+          </Card>
         ) : null}
 
         <Field
