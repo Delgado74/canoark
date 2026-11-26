@@ -12,6 +12,7 @@ import {
   DEFAULT_PREFERENCES,
   loadPreferences,
   savePreferences,
+  type AutoLockMinutes,
   type BitcoinUnit,
   type FiatCurrency,
   type Preferences,
@@ -31,6 +32,7 @@ type PreferencesContextValue = {
   prices: FiatPrices;
   setUnit: (unit: BitcoinUnit) => void;
   setCurrency: (currency: FiatCurrency) => void;
+  setAutoLockMinutes: (minutes: AutoLockMinutes) => void;
   toggleHaptics: () => void;
   /** Importe en la unidad de bitcoin elegida (BTC / sats / ₿). */
   formatBitcoin: (sats: number | null | undefined) => string;
@@ -102,6 +104,12 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     [update]
   );
 
+  const setAutoLockMinutes = useCallback(
+    (autoLockMinutes: AutoLockMinutes) =>
+      update({ ...preferencesRef.current, autoLockMinutes }),
+    [update]
+  );
+
   const toggleHaptics = useCallback(
     () =>
       update({
@@ -141,6 +149,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       prices,
       setUnit,
       setCurrency,
+      setAutoLockMinutes,
       toggleHaptics,
       formatBitcoin,
       bitcoinParts,
@@ -152,6 +161,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       prices,
       setUnit,
       setCurrency,
+      setAutoLockMinutes,
       toggleHaptics,
       formatBitcoin,
       bitcoinParts,

@@ -26,6 +26,7 @@ import {
 } from '@arkade-os/sdk';
 import { ACTIVE_NETWORK, type NetworkConfig } from '../constants/network';
 import type { BalanceView, CoinView } from '../types/wallet';
+import { usePreferences } from './usePreferences';
 import { closeArkadeSession, getArkadeSession, openArkadeSession } from '../lib/arkade/client';
 import {
   canUseBiometrics,
@@ -240,11 +241,7 @@ type WalletContextValue = {
 
 const WalletContext = createContext<WalletContextValue | null>(null);
 
-/** Tras este tiempo en segundo plano la wallet se bloquea. */
-const RELOCK_AFTER_MS = 2 * 60 * 1000;
-
-/**
- * Ventana extra sin bloquear cuando hay un swap pendiente: cerrar la sesión
+/** Ventana extra sin bloquear cuando hay un swap pendiente: cerrar la sesión
  * detiene el drive que reclama el HTLC (onchain) o el lockup (Lightning).
  */
 const SWAP_KEEPALIVE_MS = 30 * 60 * 1000;
@@ -382,6 +379,8 @@ function mergeReceivedAssets(
 }
 
 export function WalletProvider({ children }: { children: ReactNode }) {
+  const { preferences } = usePreferences();
+  const relockAfterMs = preferences.autoLockMinutes * 60 * 1000;
   const [status, setStatus] = useState<WalletStatus>('loading');
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -1145,7 +1144,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           backgroundAtRef.current = null;
           if (
             since !== null &&
-            Date.now() - since > RELOCK_AFTER_MS &&
+            Date.now() - since > relockAfterMs &&
             statusRef.current === 'unlocked'
           ) {
             void (async () => {
@@ -1169,7 +1168,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     );
 
     return () => subscription.remove();
-  }, [lock, syncBalance]);
+  }, [lock, syncBalance, relockAfterMs]);
 
   const value: WalletContextValue = {
     status,
