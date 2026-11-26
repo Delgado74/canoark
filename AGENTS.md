@@ -123,7 +123,7 @@ npx expo run:android
 
 ## CI
 Sin EAS. Dos workflows con el mismo pipeline base (Node22+JDK17+AndroidSDK → `npm ci` → `npx expo prebuild --platform android --clean --no-install` → gradle):
-- `.github/workflows/build-apk.yml`: push a `main`/tags `v*` + dispatch. `assembleDebug` → artifact `canoark-debug-*` (`app-debug.apk`, 14 días). Pruebas, no publicable.
+- `.github/workflows/build-apk.yml`: solo `workflow_dispatch` + cron semanal (lunes 06:00 UTC). `assembleDebug` → artifact `canoark-debug-*` (`app-debug.apk`, 7 días). Pruebas, no publicable.
 - `.github/workflows/release-apk.yml`: **solo** `workflow_dispatch` (input `network`). Exige secretos de firma, `assembleRelease`, verifica con `apksigner` que no sea clave debug y sube `canoark-<red>-v<version>-code<versionCode>-run<N>.apk` (90 días).
 - Vars repo: `ARKADE_NETWORK`, `LNURL_BASE_URL`, `LNURL_DOMAIN`.
 - Secretos firma: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
