@@ -8,6 +8,24 @@ Fuentes: APIs/términos Arkade → skill + MCP `arkade-docs`. Este archivo → d
 - `nostr-tools` **exacto `2.24.1`** (peer exacto de swap). No `^2.26.0`. No `--legacy-peer-deps`.
 - Node 22, JDK 17
 
+## Terminología (doc oficial Arkade)
+En textos visibles, comentarios y docs se usa el término actual. En código se conservan los identificadores del SDK (`Vtxo`, `getVtxos`, `VtxoManager`, `kind: 'vtxo'`) y no se renombran rutas ni funciones.
+
+| Obsoleto | Actual en CanoArk |
+|---|---|
+| VTXO (en prosa) | salida virtual |
+| ronda / round | intercambio por lotes (batch swap) |
+| round transaction | transacción de compromiso |
+| Ark address | dirección Arkade |
+| Ark transaction / arkoor / out-of-round | transacción Arkade |
+| ASP / Ark server / Ark service provider | el operador |
+| refresh | renovación |
+| virtual mempool | ejecución offchain |
+| UTXO (en prosa) | output onchain |
+
+- "Dentro de Arkade", nunca "en/sobre Arkade". Un solo operador, nunca "operadores".
+- `test/terminology.test.ts` falla si reaparecen `VTXO`, `ronda`, `Arkade Mint`, `Batch` o el título `Servidor` en `src/app` y `src/components`. La única excepción es el literal del SDK `No VTXOs found`.
+
 ## Red (inlineada al compilar; no runtime)
 `EXPO_PUBLIC_ARKADE_NETWORK` = `mutinynet` | `mainnet`
 
@@ -72,10 +90,10 @@ Fuentes: APIs/términos Arkade → skill + MCP `arkade-docs`. Este archivo → d
 - Al claim: preimagen vía `preimageForSwapRecord(wallet, projection)` desde `profile.hashlock`, verificar contra `paymentHash`, `session.reportSettled(preimage)`. Best-effort; si falla, pago offline por dirección Arkade.
 - SSE solo foreground. App cerrada → servidor LNURL usa dirección Arkade registrada.
 
-## Activos (Arkade Mint)
+## Activos (Arkade Assets)
 - Emitir: `wallet.assetManager.issue({ amount, metadata:{name,ticker,decimals,icon}, controlAssetId? })`.
 - Enviar: `wallet.send({ recipients:[{ address, assets:[{ assetId, amount }] }] })`. Sólo dirección Arkade; `amount` de BTC por defecto = dust del operador (sats de portador).
-- Recibir: el activo llega al VTXO de la dirección Arkade; no hay dirección por activo. Compartir dirección + `assetId`.
+- Recibir: el activo llega a la salida virtual de la dirección Arkade; no hay dirección por activo. Compartir dirección + `assetId`.
 - Saldo: `WalletBalance.assets` (todo) y `availableAssets` (gastable, lo que usa `BalanceView.assets`).
 - `assetId` en el saldo es hex sin prefijo; los mercados lo publican CAIP (`arkade:<red>/asset:<hex>`) → normalizar con `bareAssetId`.
 - Metadatos (ticker/decimals): `assetManager.getAssetDetails`, con caché en `lib/arkade/assetInfo.ts`.

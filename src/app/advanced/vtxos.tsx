@@ -152,8 +152,8 @@ export default function VtxosScreen() {
       setConsolidation(null);
       await loadCoins();
       Alert.alert(
-        'VTXOs consolidados',
-        `${result.inputCount} monedas se unieron en una de ${formatBitcoin(
+        'Salidas virtuales consolidadas',
+        `${result.inputCount} salidas virtuales se unieron en una de ${formatBitcoin(
           result.outputSats
         )}. La comisión fue de ${formatSats(result.feeSats)} sats.`
       );
@@ -172,7 +172,7 @@ export default function VtxosScreen() {
       await loadCoins();
       Alert.alert(
         'Saldo recuperado',
-        `Se liquidaron ${result.vtxoCount} VTXOs recuperables${
+        `Se liquidaron ${result.vtxoCount} salidas virtuales recuperables${
           result.subdustSats > 0n
             ? `, incluidos ${formatSats(Number(result.subdustSats))} sats de polvo`
             : ''
@@ -187,18 +187,29 @@ export default function VtxosScreen() {
 
   return (
     <SettingsScreen
-      title="Monedas virtuales"
+      title="Salidas virtuales"
       onRefresh={() => void refresh()}
       refreshing={busy}
     >
+      <Notice tone="info">
+        Una salida virtual es una salida de Bitcoin que puedes gastar al
+        instante dentro de Arkade. Se liquida en Bitcoin mediante un intercambio
+        por lotes que cofirma el operador.
+      </Notice>
       <SectionLabel>Resumen</SectionLabel>
       <Row
         label="Saldo Arkade"
         value={balance ? formatBitcoin(balance.available) : '—'}
       />
-      <Row label="VTXOs activos" value={`${virtual.length}`} />
-      <Row label="Total VTXOs" value={formatBitcoin(totalVirtual)} />
-      <Row label="UTXOs de boarding" value={formatBitcoin(totalBoarding)} />
+      <Row label="Salidas virtuales activas" value={`${virtual.length}`} />
+      <Row
+        label="Total salidas virtuales"
+        value={formatBitcoin(totalVirtual)}
+      />
+      <Row
+        label="Outputs onchain de boarding"
+        value={formatBitcoin(totalBoarding)}
+      />
       <Row
         label="Recuperable / polvo"
         value={balance ? formatBitcoin(balance.recoverable) : '—'}
@@ -210,8 +221,11 @@ export default function VtxosScreen() {
 
       <SectionLabel>Optimizar</SectionLabel>
       {consolidation ? (
-        <Card title="Consolidar VTXOs">
-          <Row label="Monedas" value={String(consolidation.inputCount)} />
+        <Card title="Consolidar salidas virtuales">
+          <Row
+            label="Salidas virtuales"
+            value={String(consolidation.inputCount)}
+          />
           <Row
             label="Quedaría"
             value={`${formatSats(consolidation.outputSats)} sats`}
@@ -222,7 +236,7 @@ export default function VtxosScreen() {
           />
           <Paragraph muted>
             Reinicia la profundidad de la cadena, pero no abarata un envío
-            onchain inmediato: añade una ronda de settlement.
+            onchain inmediato: añade un intercambio por lotes.
           </Paragraph>
           <Button
             title="Consolidar ahora"
@@ -246,7 +260,7 @@ export default function VtxosScreen() {
         />
       )}
       <Button
-        title="Recuperar VTXOs vencidos o polvo"
+        title="Recuperar salidas virtuales vencidas o polvo"
         variant="secondary"
         onPress={() => void recover()}
         loading={recovering}
@@ -254,13 +268,13 @@ export default function VtxosScreen() {
       />
       <Notice tone="info">
         Consolidar reduce el número de inputs y acorta la rama de salida
-        unilateral, pero cuesta una ronda. Hazlo mientras el operador esté
-        disponible; si ya cayó, solo queda el plan de salida.
+        unilateral, pero cuesta un intercambio por lotes. Hazlo mientras el
+        operador esté disponible; si ya cayó, solo queda el plan de salida.
       </Notice>
 
-      <SectionLabel>Virtual outputs</SectionLabel>
+      <SectionLabel>Salidas virtuales</SectionLabel>
       {virtual.length === 0 ? (
-        <Paragraph muted>No hay VTXOs activos.</Paragraph>
+        <Paragraph muted>No hay salidas virtuales activas.</Paragraph>
       ) : (
         <View style={styles.list}>
           {virtual.map(coin => (
@@ -280,7 +294,11 @@ export default function VtxosScreen() {
         </View>
       )}
 
-      <Button title="Actualizar monedas" onPress={refresh} loading={busy} />
+      <Button
+        title="Actualizar salidas virtuales"
+        onPress={refresh}
+        loading={busy}
+      />
       <Button
         title="Convertir boarding a saldo Arkade"
         variant="secondary"
@@ -293,8 +311,13 @@ export default function VtxosScreen() {
         minuto. Este botón fuerza la liquidación sin esperar al siguiente ciclo.
       </Notice>
       <Notice tone="info">
-        Los VTXOs se renuevan automáticamente antes de vencer. Si el vencimiento
-        ya pasó, el SDK los recupera en el siguiente ciclo.
+        Las salidas virtuales se renuevan automáticamente antes de vencer. Si el
+        vencimiento ya pasó, el SDK las recupera en el siguiente ciclo.
+      </Notice>
+      <Notice tone="info">
+        «Preconfirmado» significa que el operador ya aceptó la salida virtual,
+        pero todavía no tiene finalidad en Bitcoin. «Liquidado» significa que ya
+        está incluida en la transacción de compromiso.
       </Notice>
     </SettingsScreen>
   );
@@ -311,7 +334,8 @@ function CoinCard({ coin, amount }: { coin: CoinView; amount: string }) {
         />
       </View>
       <Text style={styles.meta}>
-        {coin.kind === 'vtxo' ? 'VTXO' : 'UTXO boarding'} · {expiryLabel(coin.expiresAt)}
+        {coin.kind === 'vtxo' ? 'Salida virtual' : 'Output onchain'} ·{' '}
+        {expiryLabel(coin.expiresAt)}
       </Text>
       <Text style={styles.txid} numberOfLines={1}>
         {coin.txid}:{coin.vout}

@@ -28,8 +28,9 @@ import {
  * sobre él — enviarlo a otra dirección Arkade, recibirlo en la propia y
  * cambiarlo por BTC en un solver.
  *
- * Los activos no tienen dirección propia: viajan en un VTXO que lleva también
- * los sats de portador, así que "recibir" es compartir la dirección Arkade.
+ * Los activos no tienen dirección propia: viajan en una salida virtual que
+ * lleva también los sats de portador, así que "recibir" es compartir la
+ * dirección Arkade.
  */
 export default function AssetScreen() {
   const params = useLocalSearchParams<{ assetId?: string }>();
@@ -120,8 +121,9 @@ export default function AssetScreen() {
         recibirlos, comparte tu dirección y este ID con quien te los envía.
       </Notice>
       <Paragraph muted>
-        Cada activo viaja dentro de un VTXO con unos sats de portador en BTC.
-        Esos sats también son tuyos y se gastan junto al activo.
+        Cada activo viaja dentro de una salida virtual con unos sats de
+        portador en BTC. Esos sats también son tuyos y se gastan junto al
+        activo.
       </Paragraph>
     </Screen>
   );

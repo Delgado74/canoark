@@ -6,10 +6,10 @@ export default function ServerScreen() {
   const { network } = useWallet();
 
   return (
-    <SettingsScreen title="Servidor">
+    <SettingsScreen title="Operador">
       <SectionLabel>Arkade</SectionLabel>
       <Row label="Red" value={network.label} />
-      <Row label="Operator" value={network.operatorUrl} mono />
+      <Row label="Operador" value={network.operatorUrl} mono />
       <Row label="Indexer" value={network.indexerUrl} mono />
       <Row label="Esplora" value={network.esploraUrl} mono />
       <SectionLabel>Servicios</SectionLabel>
@@ -23,7 +23,8 @@ export default function ServerScreen() {
       </Notice>
       <Paragraph muted>
         Los valores por defecto replican la configuración de Arkade Wallet:
-        delegator, registro de solvers y servidor LNURL de la red activa.
+        delegador, registro de solvers y servidor LNURL de la red activa. El
+        operador es la única entidad que cofirma tus transacciones en Arkade.
       </Paragraph>
     </SettingsScreen>
   );

@@ -164,8 +164,8 @@ export default function TransactionDetailScreen() {
           })}
           <Text style={styles.note}>
             Los {formatSats(Math.abs(amount))} sats de este movimiento son el
-            portador BTC del activo, no un cargo aparte: viajan en el mismo VTXO
-            y siguen en tu saldo disponible.
+            portador BTC del activo, no un cargo aparte: viajan en la misma
+            salida virtual y siguen en tu saldo disponible.
           </Text>
         </Card>
       ) : null}

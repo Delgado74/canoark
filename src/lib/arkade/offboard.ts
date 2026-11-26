@@ -13,13 +13,13 @@ import { ACTIVE_NETWORK } from '../../constants/network';
 /**
  * Salida colaborativa (offboarding) de Arkade → L1.
  *
- * No hay swap ni HTLC: se gastan VTXOs propios en una ronda de settlement del
- * operador (`wallet.settle`) y la commitment transaction de esa ronda paga la
- * dirección Bitcoin de destino. Es exactamente el mecanismo de Arkade Wallet
- * para "enviar onchain".
+ * No hay swap ni HTLC: se gastan salidas virtuales propias en un intercambio
+ * por lotes del operador (`wallet.settle`) y la transacción de compromiso de
+ * ese lote paga la dirección Bitcoin de destino. Es exactamente el mecanismo de
+ * Arkade Wallet para "enviar onchain".
  *
- * La única contraparte es el ASP, que cofirma la ronda: no hay solver, no hay
- * preimagen y no hay nada que reclamar después.
+ * La única contraparte es el operador, que cofirma el lote: no hay solver, no
+ * hay preimagen y no hay nada que reclamar después.
  */
 
 /**
@@ -83,7 +83,7 @@ export type CollaborativeExitPlan = {
   outputs: { address: string; amount: bigint }[];
   /** Comisión total: intent fee de cada input, la salida onchain y el cambio. */
   feeSats: number;
-  /** Cambio que vuelve como VTXO; 0 cuando no supera el dust. */
+  /** Cambio que vuelve como salida virtual; 0 cuando no supera el dust. */
   changeSats: number;
 };
 
@@ -240,14 +240,14 @@ async function buildCollaborativeExit(
   }, 0);
   throw new Error(
     candidates.length === 0
-      ? 'No hay VTXOs gastables para una salida onchain.'
+      ? 'No hay salidas virtuales gastables para una salida onchain.'
       : `Saldo insuficiente para la salida onchain: hay ${total} sats netos y hacen falta ${wanted}.`
   );
 }
 
 /**
- * Ejecuta el offboarding: una ronda de settlement del operador paga la
- * dirección de destino con los VTXOs seleccionados.
+ * Ejecuta el offboarding: un intercambio por lotes del operador paga la
+ * dirección de destino con las salidas virtuales seleccionadas.
  */
 export async function sendCollaborativeExit(
   wallet: IWallet,
@@ -285,12 +285,13 @@ export type ConsolidationPlan = {
 };
 
 /**
- * Consolida los VTXOs gastables en uno solo.
+ * Consolida las salidas virtuales gastables en una sola.
  *
- * No abarata un offboard inmediato: añade una ronda de settlement. Sirve para
+ * No abarata un offboard inmediato: añade un intercambio por lotes. Sirve para
  * reiniciar la profundidad de la rama (salida unilateral más barata) y para
  * evitar que el próximo pago tenga que gastar muchos inputs pequeños. No toca
- * outputs con assets: el activo viaja en su propio VTXO y no debe mezclarse.
+ * outputs con assets: el activo viaja en su propia salida virtual y no debe
+ * mezclarse.
  */
 export async function planVtxoConsolidation(
   wallet: IWallet
@@ -322,7 +323,7 @@ export async function planVtxoConsolidation(
 
   if (priced.length < 2) {
     throw new Error(
-      'No hay al menos dos VTXOs sin activos que merezca la pena consolidar.'
+      'No hay al menos dos salidas virtuales sin activos que merezca la pena consolidar.'
     );
   }
 

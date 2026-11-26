@@ -97,7 +97,7 @@ export default function ArkadeMintScreen() {
   };
 
   return (
-    <SettingsScreen title="Arkade Mint">
+    <SettingsScreen title="Arkade Assets">
       <SectionLabel>Estado</SectionLabel>
       <Row label="Red" value={network.swapNetwork} />
       <Row label="Disponible" value={network.isMainnet ? 'Sí' : 'En pruebas'} />
@@ -172,15 +172,15 @@ export default function ArkadeMintScreen() {
           <CopyField label="ID del activo" value={result.assetId} />
           <CopyField label="Arkade TXID" value={result.arkTxId} />
           <Notice tone="info">
-            La emisión se completó. El activo aparecerá en tus VTXOs cuando el
-            saldo se actualice.
+            La emisión se completó. El activo aparecerá en tus salidas virtuales
+            cuando el saldo se actualice.
           </Notice>
         </Card>
       ) : null}
 
       <Notice tone="info">
-        Arkade Mint permite emitir activos sobre Arkade. Revisa nombre, ticker y
-        decimales antes de emitir: los metadatos son inmutables.
+        Arkade Assets permite emitir activos dentro de Arkade. Revisa nombre,
+        ticker y decimales antes de emitir: los metadatos son inmutables.
       </Notice>
       <Paragraph muted>
         La cantidad se expresa en unidades base (sin aplicar decimales). Por

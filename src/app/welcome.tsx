@@ -53,9 +53,14 @@ export default function WelcomeScreen() {
           text="La frase de recuperación se cifra en el dispositivo y nunca se envía a un servidor."
         />
         <Bullet
+          icon="🪙"
+          title="Salidas virtuales"
+          text="Tus sats viven dentro de Arkade como salidas virtuales: se gastan al instante y se liquidan en Bitcoin por lotes."
+        />
+        <Bullet
           icon="🌐"
           title="Lightning y onchain"
-          text="Paga facturas Lightning con solvers. Envía bitcoin con una salida colaborativa y recibe depósitos onchain por boarding, sin solver."
+          text="Paga facturas Lightning con solvers. Envía bitcoin con offboarding (una salida colaborativa) y recibe depósitos onchain por boarding, sin solver."
         />
       </View>
 

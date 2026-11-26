@@ -297,7 +297,7 @@ export default function CashSettingsScreen() {
         error.message.includes('No VTXOs found')
       ) {
         setClaimError(
-          'No hay saldo pendiente en este ArkadeCash. Puede que ya se haya reclamado o que el output haya caducado y lo haya barrido el operador.'
+          'No hay saldo pendiente en este ArkadeCash. Puede que ya se haya reclamado o que la salida haya caducado y lo haya barrido el operador.'
         );
       } else {
         setClaimError(errorMessage(error));
@@ -323,15 +323,15 @@ export default function CashSettingsScreen() {
   return (
     <SettingsScreen
       title="Arkade Cash"
-      badge="Bearer"
+      badge="Al portador"
       onRefresh={refresh}
       refreshing={refreshing}
     >
       <Paragraph muted>
-        Arkade Cash es un pago bearer dentro de Arkade: el token lleva una llave
-        privada y lo puede reclamar quien lo posea. No es una nota Ark: al
+        Arkade Cash es un pago al portador dentro de Arkade: el token lleva una
+        llave privada y lo puede reclamar quien lo posea. No es una nota Ark: al
         reclamarlo se barre directamente a tu saldo, sin canjear la nota en un
-        batch swap.
+        intercambio por lotes.
       </Paragraph>
 
       <Notice tone="warning">
@@ -651,7 +651,7 @@ export default function CashSettingsScreen() {
           ) : null}
 
           <Notice tone="warning">
-            Reclama el token antes de que expire el output. Pasado ese punto el
+            Reclama el token antes de que expire la salida. Pasado ese punto el
             operador puede barrerlo y el barrido directo ya no es posible: el SDK
             intenta recuperarlo, pero no está garantizado.
           </Notice>

@@ -433,9 +433,9 @@ export default function SendScreen() {
             {result.kind === 'swap'
               ? outcomeLabel(result.outcome)
               : result.kind === 'onchain'
-                ? 'El operador incluyó la salida en una ronda de settlement. El destinatario recibe el pago en la commitment transaction.'
+                ? 'El operador incluyó la salida en un intercambio por lotes. El destinatario recibe el pago en la transacción de compromiso.'
                 : result.kind === 'arkade' && result.assetText
-                  ? 'El activo viaja en un VTXO del destinatario, junto a los sats de portador que exige el operador.'
+                  ? 'El activo viaja en una salida virtual del destinatario, junto a los sats de portador que exige el operador.'
                   : 'La transacción se envió al operador. El saldo se actualizará en unos segundos.'}
           </Text>
         </View>
@@ -563,7 +563,7 @@ export default function SendScreen() {
           {kind === 'onchain' && onchainQuote ? (
             <>
               <Row
-                label="VTXOs usados"
+                label="Salidas virtuales usadas"
                 value={String(onchainQuote.inputs.length)}
               />
               <Row
@@ -604,15 +604,16 @@ export default function SendScreen() {
         {kind === 'lightning' ? (
           <Notice tone="info">
             Una factura Lightning se paga mediante un swap. El solver recibe el
-            importe de la factura y paga al destino.
+            importe de la factura y paga al destino. Es un Arkade Intent
+            (developer preview).
           </Notice>
         ) : null}
         {kind === 'onchain' ? (
           <Notice tone="warning">
             El pago se hace con una salida colaborativa: el operador incluye tus
-            VTXOs en una ronda de settlement y la commitment transaction paga la
-            dirección de destino. No hay solver ni swap; mantén la app abierta
-            hasta que la ronda cierre.
+            salidas virtuales en un intercambio por lotes y la transacción de
+            compromiso paga la dirección de destino. No hay solver ni swap;
+            mantén la app abierta hasta que el lote cierre.
           </Notice>
         ) : null}
         {kind === 'arkade' ? (
@@ -763,7 +764,7 @@ export default function SendScreen() {
             keyboardType="number-pad"
             hint={
               kind === 'onchain'
-                ? 'Se rechaza antes de firmar si la ronda del operador cuesta más.'
+                ? 'Se rechaza antes de firmar si el intercambio por lotes del operador cuesta más.'
                 : 'Se rechaza el pago antes de mover fondos si el solver pide más.'
             }
           />
@@ -771,11 +772,11 @@ export default function SendScreen() {
 
         {kind === 'onchain' && onchainQuote ? (
           <Card
-            title="Salida onchain"
-            subtitle="Estimación del operador para este importe"
+            title="Offboarding"
+            subtitle="Salida onchain estimada por el operador para este importe"
           >
             <Row
-              label="VTXOs necesarios"
+              label="Salidas virtuales necesarias"
               value={String(onchainQuote.inputs.length)}
             />
             <Row

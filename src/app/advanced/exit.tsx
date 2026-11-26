@@ -167,7 +167,7 @@ export default function ExitScreen() {
     if (isExpired(stored.validUntil)) {
       Alert.alert(
         'Plan vencido',
-        'El batch de estos VTXOs ya venció. Genera un plan nuevo con el saldo actual.'
+        'El lote de liquidación de estas salidas virtuales ya venció. Genera un plan nuevo con el saldo actual.'
       );
       return;
     }
@@ -305,7 +305,7 @@ export default function ExitScreen() {
           />
           {quote.vtxos.some(vtxo => vtxo.skipped) ? (
             <Paragraph muted>
-              Algunos VTXOs se omiten por no compensar su salida:{' '}
+              Algunas salidas virtuales se omiten por no compensar su salida:{' '}
               {quote.vtxos
                 .filter(vtxo => vtxo.skipped)
                 .slice(0, 3)
@@ -326,8 +326,8 @@ export default function ExitScreen() {
 
       <Notice tone="info">
         El plan se firma ahora pero no se difunde hasta que pulses Ejecutar. No
-        gasta BTC al prepararlo. Queda obsoleto si mueves o renuevas los VTXOs
-        incluidos.
+        gasta BTC al prepararlo. Queda obsoleto si mueves o renuevas las salidas
+        virtuales incluidas.
       </Notice>
 
       <SectionLabel>Planes guardados</SectionLabel>

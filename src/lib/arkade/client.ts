@@ -41,7 +41,7 @@ export type ArkadeSession = {
   onchainWallet: OnchainWallet;
   /**
    * Manager de liquidación. Su construcción arranca el poll que convierte los
-   * depósitos onchain (boarding) en saldo Arkade y renueva los VTXOs.
+   * depósitos onchain (boarding) en saldo Arkade y renueva las salidas virtuales.
    */
   vtxoManager: IVtxoManager;
 };
