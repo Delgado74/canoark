@@ -2,11 +2,9 @@ name: Build Android APK (debug)
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    tags:
-      - 'v*'
+  schedule:
+    # Compilación de control semanal: detecta bit-rot sin build en cada push.
+    - cron: '0 6 * * 1'
 
 concurrency:
   group: android-debug-${{ github.ref }}
@@ -109,4 +107,4 @@ jobs:
           name: canoark-debug-${{ github.run_number }}-${{ github.sha }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
