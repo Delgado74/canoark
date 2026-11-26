@@ -59,8 +59,9 @@ export function AssetBalances({ assets }: { assets: BalanceAsset[] }) {
         );
       })}
       <Text style={styles.note}>
-        Los activos viajan dentro de un VTXO con unos sats de portador en BTC.
-        Esos sats también son tuyos y forman parte del saldo disponible.
+        Los activos viajan dentro de una salida virtual con unos sats de
+        portador en BTC. Esos sats también son tuyos y forman parte del saldo
+        disponible.
       </Text>
     </Card>
   );

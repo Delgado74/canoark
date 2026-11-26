@@ -62,7 +62,7 @@ export default function DelegatesScreen() {
   }, [network.delegateUrl]);
 
   return (
-    <SettingsScreen title="Delegados">
+    <SettingsScreen title="Renovación delegada">
       <SectionLabel>Delegador configurado</SectionLabel>
       <Row label="URL" value={network.delegateUrl ?? 'Desactivado'} mono />
       <Row label="Renovación" value="Automática" />
@@ -83,7 +83,8 @@ export default function DelegatesScreen() {
       />
       <Notice tone="info">
         Mismo delegador que Arkade Wallet. La wallet delega la firma de las
-        renovaciones para que los VTXOs se renueven aunque la app esté cerrada.
+        renovaciones para que las salidas virtuales se renueven aunque la app
+        esté cerrada. El delegado no puede mover tus fondos.
       </Notice>
       <Paragraph muted>
         Si el delegador no responde, la wallet sigue renovando por su cuenta

@@ -18,7 +18,7 @@ export default function AdvancedSettingsScreen() {
       <SettingsGroup>
         <MenuRow
           icon="🏦"
-          label="Arkade Mint"
+          label="Arkade Assets"
           value="Activos"
           onPress={() => router.push('/advanced/mint')}
         />
@@ -29,13 +29,13 @@ export default function AdvancedSettingsScreen() {
         />
         <MenuRow
           icon="◫"
-          label="Coin control"
-          value={`${coins.length} monedas`}
+          label="Salidas virtuales"
+          value={`${coins.length} salidas`}
           onPress={() => router.push('/advanced/vtxos')}
         />
         <MenuRow
           icon="🤝"
-          label="Delegados"
+          label="Renovación delegada"
           value={network.delegateUrl ? 'Configurado' : 'Desactivado'}
           onPress={() => router.push('/advanced/delegates')}
         />
@@ -47,7 +47,7 @@ export default function AdvancedSettingsScreen() {
         />
         <MenuRow
           icon="🛰"
-          label="Servidor"
+          label="Operador"
           value={network.label}
           onPress={() => router.push('/advanced/server')}
         />

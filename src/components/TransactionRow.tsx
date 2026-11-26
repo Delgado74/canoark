@@ -39,7 +39,7 @@ export function tagLabel(tag?: string): string {
     case 'exit':
       return 'Salida';
     case 'batch':
-      return 'Batch';
+      return 'Lote';
     case 'gated':
       return 'Contrato';
     default:

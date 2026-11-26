@@ -311,6 +311,11 @@ export default function ReceiveScreen() {
 
       {tab === 'lightning' ? (
         <Card>
+          <Paragraph muted>
+            Las facturas Lightning se liquidan con un Arkade Intent (developer
+            preview): el solver paga la factura y tú recibes saldo dentro de
+            Arkade.
+          </Paragraph>
           {lnurlAddress ? (
             <View style={styles.labelRow}>
               <Text style={styles.label}>Lightning Address</Text>
@@ -501,8 +506,8 @@ export default function ReceiveScreen() {
                           key={`${utxo.txid}:${utxo.vout}`}
                           label={
                             utxo.confirmed
-                              ? `UTXO confirmado #${utxo.vout}`
-                              : `UTXO pendiente #${utxo.vout}`
+                              ? `Output onchain confirmado #${utxo.vout}`
+                              : `Output onchain pendiente #${utxo.vout}`
                           }
                           value={`${formatSats(
                             utxo.value
@@ -512,8 +517,9 @@ export default function ReceiveScreen() {
                       ))
                     ) : (
                       <Text style={styles.depositEmpty}>
-                        No hay UTXOs en esta dirección. Si acabas de enviar, puede
-                        tardar unos segundos en aparecer en el mempool.
+                        No hay outputs onchain en esta dirección. Si acabas de
+                        enviar, puede tardar unos segundos en aparecer en el
+                        mempool.
                       </Text>
                     )}
                   </>

@@ -90,12 +90,12 @@ export default function NotesSettingsScreen() {
         disabled={Boolean(parsed?.error) || !note.trim()}
       />
       <Notice tone="info">
-        Las notas Ark son pagos bearer: quien tenga la nota puede canjearla.
+        Las notas Ark son pagos al portador: quien tenga la nota puede canjearla.
         Se pueden pegar varias separadas por espacios.
       </Notice>
       <Paragraph muted>
         Al canjear, la nota entra en tu saldo virtual y se liquida en el
-        siguiente batch del operador.
+        siguiente lote de liquidación del operador.
       </Paragraph>
     </SettingsScreen>
   );

@@ -153,8 +153,8 @@ type WalletContextValue = {
   ) => Promise<SendOutcome>;
   /**
    * Envía unidades de un activo Arkade a otra dirección Arkade. El activo
-   * viaja en un VTXO que lleva además los sats de portador (dust) que exige
-   * el operador; los elige el SDK.
+   * viaja en una salida virtual que lleva además los sats de portador (dust)
+   * que exige el operador; los elige el SDK.
    */
   sendAsset: (params: {
     assetId: string;
@@ -171,7 +171,7 @@ type WalletContextValue = {
   ) => () => void;
   /** Solo disponible con la billetera desbloqueada. */
   revealMnemonic: () => string | null;
-  /** Recarga los coins (VTXOs + UTXOs de boarding) bajo demanda. */
+  /** Recarga los coins (salidas virtuales + outputs onchain de boarding) bajo demanda. */
   loadCoins: () => Promise<CoinView[]>;
   /** Canjea una o varias notas Ark separadas por espacios. */
   redeemNotes: (note: string) => Promise<void>;
@@ -207,7 +207,7 @@ type WalletContextValue = {
   ) => Promise<CollaborativeExitPlan>;
   /** Dirección P2TR de la misma semilla que paga los fees de una salida unilateral. */
   getExitWallet: () => Promise<{ address: string; balanceSats: number }>;
-  /** Cotiza el unroll + sweep de todos los VTXOs gastables. */
+  /** Cotiza el unroll + sweep de todas las salidas virtuales gastables. */
   estimateUnilateralExit: (sweepAddress?: string) => Promise<ExitQuote>;
   /** Prefirma el paquete de salida y lo guarda en este dispositivo. */
   prepareUnilateralExit: (sweepAddress?: string) => Promise<StoredExitPackage>;
@@ -757,8 +757,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       }
 
       // Onchain puro: salida colaborativa, igual que Arkade Wallet. Se gasta un
-      // VTXO propio en una ronda del operador y el pago sale en la commitment
-      // transaction; no hay swap, HTLC ni claim que pueda quedarse colgado.
+      // Salida virtual propia en un lote del operador y el pago sale en la
+      // transacción de compromiso; no hay swap, HTLC ni claim que pueda quedar
+      // colgado.
       if (isOnchainAddress(target)) {
         const { txid, feeSats, changeSats } = await sendCollaborativeExit(
           session.wallet,
@@ -1042,7 +1043,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     const session = await ensureSession();
     const before = await session.vtxoManager.getRecoverableBalance();
     if (before.recoverable <= 0n && before.subdust <= 0n) {
-      throw new Error('No hay VTXOs recuperables ni polvo que liquidar.');
+      throw new Error('No hay salidas virtuales recuperables ni polvo que liquidar.');
     }
     const txid = await session.vtxoManager.recoverVtxos();
     await refresh();

@@ -249,8 +249,9 @@ export default function SwapScreen() {
     amountText.trim() !== '' && amountAtomic === null;
 
   /*
-   * El cambio parcial de un token deja un VTXO de cambio y necesita otro VTXO
-   * que pague el dust. Sin él, `accept` falla con un "Insufficient funds" seco.
+   * El cambio parcial de un token deja una salida virtual de cambio y necesita
+   * otra salida virtual que pague el dust. Sin él, `accept` falla con un
+   * "Insufficient funds" seco.
    */
   const lacksAssetChangeCarrier =
     direction === 'usd-to-btc' &&
@@ -521,10 +522,10 @@ export default function SwapScreen() {
 
         {success && direction === 'btc-to-usd' ? (
           <Notice tone="info">
-            El {market?.usdTicker ?? 'activo'} recibido viaja en un VTXO con{' '}
-            {formatSats(Number(ASSET_CARRIER_SATS))} sats de portador. Por eso el
-            historial muestra también un movimiento de esos sats: no es un cobro
-            aparte, siguen en tu saldo BTC.
+            El {market?.usdTicker ?? 'activo'} recibido viaja en una salida
+            virtual con {formatSats(Number(ASSET_CARRIER_SATS))} sats de
+            portador. Por eso el historial muestra también un movimiento de esos
+            sats: no es un cobro aparte, siguen en tu saldo BTC.
           </Notice>
         ) : null}
 
@@ -543,7 +544,8 @@ export default function SwapScreen() {
         {failed ? (
           <Notice tone="warning">
             El swap terminó en «{outcomeLabel(outcome)}». El reembolso, si
-            corresponde, lo gestiona el cliente de swaps con tus VTXOs.
+            corresponde, lo gestiona el cliente de swaps con tus salidas
+            virtuales.
           </Notice>
         ) : null}
 
@@ -597,9 +599,9 @@ export default function SwapScreen() {
         ) : null}
 
         <Notice tone="warning">
-          El swap se fondea con tus VTXOs en Arkade. Mantén la app abierta hasta
-          que termine: el cliente reclama el activo recibido o reembolsa el
-          entregado.
+          El swap se fondea con tus salidas virtuales dentro de Arkade. Mantén la
+          app abierta hasta que termine: el cliente reclama el activo recibido o
+          reembolsa el entregado.
         </Notice>
 
         <Button
@@ -642,7 +644,10 @@ export default function SwapScreen() {
 
       <View style={styles.header}>
         <Title>Cambiar BTC / USD</Title>
-        <Badge label="Mutinynet" tone="primary" />
+        <View style={styles.badges}>
+          <Badge label="Arkade Intents · preview" tone="neutral" />
+          <Badge label="Mutinynet" tone="primary" />
+        </View>
       </View>
 
       {!available ? (
@@ -759,10 +764,10 @@ export default function SwapScreen() {
               {shownError ? <ErrorBanner message={shownError} /> : null}
               {lacksAssetChangeCarrier ? (
                 <Notice tone="warning">
-                  Un cambio parcial de {market.usdTicker} necesita un VTXO de BTC
-                  adicional para llevar el cambio del token. Deja al menos{' '}
-                  {formatSats(cashDustSats * 2)} sats libres o entrega el saldo
-                  completo de {market.usdTicker}.
+                  Un cambio parcial de {market.usdTicker} necesita una salida
+                  virtual de BTC adicional para llevar el cambio del token. Deja
+                  al menos {formatSats(cashDustSats * 2)} sats libres o entrega
+                  el saldo completo de {market.usdTicker}.
                 </Notice>
               ) : null}
 
@@ -895,6 +900,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
+  },
+  badges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    gap: spacing.xs,
+    flexShrink: 1,
   },
   center: {
     alignItems: 'center',
