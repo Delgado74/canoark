@@ -166,7 +166,7 @@ export function SectionLabel({ children }: { children: ReactNode }) {
   return <Text style={styles.sectionLabel}>{children}</Text>;
 }
 
-export function Segmented<T extends string>({
+export function Segmented<T extends string | number>({
   options,
   value,
   onChange,

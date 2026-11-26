@@ -51,7 +51,7 @@ En textos visibles, comentarios y docs se usa el término actual. En código se 
 - Marcador `canoark.hasWallet.v1` (no dispara prompt biométrico al arrancar).
 - Migrar `canoark.mnemonic.v1` → esquema cifrado en primer unlock con passphrase.
 - Huellas invalidadas → avisar, desbloquear con passphrase, no perder wallet.
-- Bloqueo a 2 min en background (`AppState`): cierra sesión SDK + borra mnemónica de memoria.
+- Bloqueo configurable en background (`AppState`; 2/5/10 min, por defecto 5): cierra sesión SDK + borra mnemónica de memoria.
 
 ## SQLite
 - `src/lib/storage/sqlite.ts` adapta `expo-sqlite` a `SQLExecutor` (`run`/`get`/`all`).
@@ -103,7 +103,7 @@ En textos visibles, comentarios y docs se usa el término actual. En código se 
 - `settlementConfig.vtxoThreshold` = 259200 s (3 días).
 - `ExpoWallet.setup` sincroniza al arrancar pero **NO renueva**. Renovación solo con app abierta + gestor settlement activo.
 - Al volver de background: sincronizar + dejar app abierta unos segundos.
-- Bloqueo 2 min cierra sesión y detiene renovación (trade-off seguridad/desatendido).
+- Bloqueo automático (2/5/10 min, por defecto 5) cierra sesión y detiene renovación (trade-off seguridad/desatendido).
 
 ## Build local (sin EAS)
 npm install

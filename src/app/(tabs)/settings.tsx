@@ -13,6 +13,7 @@ import {
   Row,
   Screen,
   SectionLabel,
+  Segmented,
   Title,
 } from '../../components/ui';
 import { colors, spacing } from '../../constants/theme';
@@ -20,6 +21,7 @@ import { useWallet } from '../../hooks/useWallet';
 import { usePreferences } from '../../hooks/usePreferences';
 import { walletModeLabel, type WalletMode } from '../../lib/arkade/walletMode';
 import { errorMessage } from '../../lib/format';
+import { AUTO_LOCK_OPTIONS } from '../../lib/preferences';
 
 const REPO_URL = 'https://github.com/Delgado74/canoark';
 
@@ -71,7 +73,7 @@ export default function SettingsScreen() {
     walletMode,
     applyWalletMode,
   } = useWallet();
-  const { preferences } = usePreferences();
+  const { preferences, setAutoLockMinutes } = usePreferences();
 
   const version = Constants.expoConfig?.version ?? '0.1.0';
 
@@ -313,14 +315,19 @@ export default function SettingsScreen() {
           onToggle={() => toggle('lock')}
         >
           <Paragraph muted>
-            La billetera se bloquea sola tras 2 minutos en segundo plano.
-            Desbloqueo con{' '}
+            La billetera se bloquea sola tras {preferences.autoLockMinutes}{' '}
+            minutos en segundo plano. Desbloqueo con{' '}
             {biometricAvailable
               ? biometricEnabled
                 ? 'passphrase o biometría.'
                 : 'passphrase.'
               : 'passphrase (sin biometría compatible).'}
           </Paragraph>
+          <Segmented
+            value={preferences.autoLockMinutes}
+            onChange={setAutoLockMinutes}
+            options={AUTO_LOCK_OPTIONS}
+          />
           <Button
             title="Bloquear ahora"
             variant="secondary"
