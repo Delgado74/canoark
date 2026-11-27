@@ -33,6 +33,7 @@ type PreferencesContextValue = {
   setUnit: (unit: BitcoinUnit) => void;
   setCurrency: (currency: FiatCurrency) => void;
   setAutoLockMinutes: (minutes: AutoLockMinutes) => void;
+  setOnchainSwap: (enabled: boolean) => void;
   toggleHaptics: () => void;
   /** Importe en la unidad de bitcoin elegida (BTC / sats / ₿). */
   formatBitcoin: (sats: number | null | undefined) => string;
@@ -110,6 +111,12 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     [update]
   );
 
+  const setOnchainSwap = useCallback(
+    (onchainSwap: boolean) =>
+      update({ ...preferencesRef.current, onchainSwap }),
+    [update]
+  );
+
   const toggleHaptics = useCallback(
     () =>
       update({
@@ -150,6 +157,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       setUnit,
       setCurrency,
       setAutoLockMinutes,
+      setOnchainSwap,
       toggleHaptics,
       formatBitcoin,
       bitcoinParts,
@@ -162,6 +170,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       setUnit,
       setCurrency,
       setAutoLockMinutes,
+      setOnchainSwap,
       toggleHaptics,
       formatBitcoin,
       bitcoinParts,

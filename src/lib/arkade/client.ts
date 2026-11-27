@@ -225,6 +225,29 @@ export async function retryOnchainClaim(
   }
 }
 
+/**
+ * TXID del claim L1 de un swap onchain, cuando el drive ya lo difundió.
+ *
+ * El swap recién aceptado no tiene TXID: el solver financia el HTLC y nuestra
+ * transacción de claim es la que paga al destinatario. La pantalla de éxito lo
+ * lee del registro para poder enlazar al explorador.
+ */
+export async function onchainSwapClaimTxid(
+  rfqId: string
+): Promise<string | undefined> {
+  if (!session) return undefined;
+  try {
+    const records = corridorRecordStore(session.storage.swapRepository);
+    const record = await records.getRfqSwap(rfqId);
+    const profile = record?.profile as Record<string, unknown> | undefined;
+    return typeof profile?.claimTxid === 'string'
+      ? profile.claimTxid
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Los 152 vB que ocupa el claim; sólo se usa para no gastar por debajo del dust. */
 const CLAIM_VSIZE = 152;
 
@@ -305,10 +328,14 @@ function createOnchainClaim(
       } catch {
         // Se mantiene el mínimo: el claim debe salir igualmente.
       }
-      if (options?.bump && swap.claimFeeRateSatVb) {
+      // La tarifa nunca baja de la que ya usa este swap: re-difundir a una tasa
+      // menor no reemplaza la transacción anterior en mempool. Es el mismo
+      // criterio que el claim por defecto del SDK (`nextClaimFeeRate`).
+      const previousRate = swap.claimFeeRateSatVb;
+      if (typeof previousRate === 'number' && previousRate > 0) {
         feeRateSatVb = Math.max(
           feeRateSatVb,
-          Math.ceil(swap.claimFeeRateSatVb * 1.5)
+          options?.bump ? Math.ceil(previousRate * 1.5) : previousRate
         );
       }
       // Nunca por encima de lo que deja el pago por encima del dust.

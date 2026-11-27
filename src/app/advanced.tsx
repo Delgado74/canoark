@@ -1,13 +1,16 @@
 import { router } from 'expo-router';
-import { MenuRow, Notice, SectionLabel } from '../components/ui';
+import { MenuRow, Notice, Paragraph, SectionLabel } from '../components/ui';
 import {
+  ChoiceRow,
   SettingsGroup,
   SettingsScreen,
 } from '../components/SettingsScreen';
+import { usePreferences } from '../hooks/usePreferences';
 import { useWallet } from '../hooks/useWallet';
 
 export default function AdvancedSettingsScreen() {
   const { network, coins } = useWallet();
+  const { preferences, setOnchainSwap } = usePreferences();
 
   return (
     <SettingsScreen
@@ -64,6 +67,27 @@ export default function AdvancedSettingsScreen() {
           onPress={() => router.push('/advanced/lnurl')}
         />
       </SettingsGroup>
+
+      <SectionLabel>Envíos onchain</SectionLabel>
+      <SettingsGroup>
+        <ChoiceRow
+          label="Permitir el swap del solver"
+          hint="Ofrece la ruta más barata entre el solver y la salida del operador."
+          selected={preferences.onchainSwap}
+          onPress={() => setOnchainSwap(true)}
+        />
+        <ChoiceRow
+          label="Solo la salida del operador"
+          hint="Desactiva el corredor onchain del solver. Útil si prefieres no reclamar un HTLC."
+          selected={!preferences.onchainSwap}
+          onPress={() => setOnchainSwap(false)}
+        />
+      </SettingsGroup>
+      <Paragraph muted>
+        En ambos casos el envío sale de tus salidas virtuales. El swap necesita
+        la app abierta hasta que el HTLC se reclame; la salida del operador
+        espera al cierre del intercambio por lotes.
+      </Paragraph>
 
       <Notice tone="warning">
         Estas opciones afectan a cómo la wallet habla con el operador y los

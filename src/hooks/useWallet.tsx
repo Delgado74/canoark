@@ -71,6 +71,14 @@ import {
   type StoredExitPackage,
 } from '../lib/storage/appData';
 import { bareAssetId } from '../lib/arkade/assetInfo';
+import {
+  assertOnchainSwapFee,
+  claimFeeRateSatVb,
+  isQuoteExpired,
+  quoteOnchainSwap,
+  sendOnchainSwap,
+  type OnchainSwapQuote,
+} from '../lib/arkade/onchainSend';
 import { wipeStorageDatabases } from '../lib/storage/sqlite';
 import {
   clearWalletMode,
@@ -90,7 +98,21 @@ export type SendOutcome =
       feeSats: number;
       changeSats: number;
     }
+  | {
+      /** Envío onchain por el solver: el TXID es el claim L1 y llega después. */
+      kind: 'onchain-swap';
+      id: string;
+      feeSats: number;
+      payoutAddress: string;
+    }
   | PayResult;
+
+/** Las dos rutas posibles para una dirección Bitcoin, ya cotizadas. */
+export type OnchainSendRoutes = {
+  swap?: OnchainSwapQuote;
+  /** Ausente si no hay salidas virtuales gastables o el operador no cotiza. */
+  exit?: CollaborativeExitPlan;
+};
 
 /** Activo que llegó con un pago recibido. */
 export type ReceivedAssetLine = { assetId: string; amount: bigint };
@@ -150,7 +172,9 @@ type WalletContextValue = {
   sendPayment: (
     destination: string,
     amountSats: number,
-    maxFeeSats: number
+    maxFeeSats: number,
+    /** `swap` exige solver; `exit` fuerza la salida colaborativa; sin valor, automático. */
+    route?: 'swap' | 'exit'
   ) => Promise<SendOutcome>;
   /**
    * Envía unidades de un activo Arkade a otra dirección Arkade. El activo
@@ -201,11 +225,11 @@ type WalletContextValue = {
     nextPassphrase: string,
     useBiometrics: boolean
   ) => Promise<ChangePassphraseResult>;
-  /** Cotiza una salida onchain sin aplicar el techo de comisión. */
-  quoteOnchainSend: (
+  /** Cotiza las dos rutas onchain: swap del solver (si está activo) y salida del operador. */
+  quoteOnchainRoutes: (
     destination: string,
     amountSats: number
-  ) => Promise<CollaborativeExitPlan>;
+  ) => Promise<OnchainSendRoutes>;
   /** Dirección P2TR de la misma semilla que paga los fees de una salida unilateral. */
   getExitWallet: () => Promise<{ address: string; balanceSats: number }>;
   /** Cotiza el unroll + sweep de todas las salidas virtuales gastables. */
@@ -381,6 +405,11 @@ function mergeReceivedAssets(
 export function WalletProvider({ children }: { children: ReactNode }) {
   const { preferences } = usePreferences();
   const relockAfterMs = preferences.autoLockMinutes * 60 * 1000;
+  /** Se lee dentro de callbacks estables; el ref evita recrearlos al cambiarlo. */
+  const onchainSwapRef = useRef(preferences.onchainSwap);
+  useEffect(() => {
+    onchainSwapRef.current = preferences.onchainSwap;
+  }, [preferences.onchainSwap]);
   const [status, setStatus] = useState<WalletStatus>('loading');
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -737,7 +766,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, [resetState, stopIncomingWatcher]);
 
   const sendPayment = useCallback(
-    async (destination: string, amountSats: number, maxFeeSats: number) => {
+    async (
+      destination: string,
+      amountSats: number,
+      maxFeeSats: number,
+      route?: 'swap' | 'exit'
+    ) => {
       const session = await ensureSession();
       const target = destination.trim();
       if (!target) throw new Error('Indica un destino.');
@@ -755,15 +789,77 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         return { kind: 'arkade' as const, txid };
       }
 
-      // Onchain puro: salida colaborativa, igual que Arkade Wallet. Se gasta un
-      // Salida virtual propia en un lote del operador y el pago sale en la
-      // transacción de compromiso; no hay swap, HTLC ni claim que pueda quedar
-      // colgado.
       if (isOnchainAddress(target)) {
+        const sats = Math.floor(amountSats);
+        // El solver sólo se intenta si la ruta lo permite; si no hay mercado o
+        // tarifa L1, el envío cae a la salida colaborativa del operador.
+        const wantsSwap =
+          route !== 'exit' && (route === 'swap' || onchainSwapRef.current);
+        if (wantsSwap) {
+          const rate = await claimFeeRateSatVb();
+          if (rate === undefined) {
+            if (route === 'swap') {
+              throw new Error(
+                'No hay estimación de comisión para el claim L1; usa la salida del operador.'
+              );
+            }
+          } else {
+            let quote = await quoteOnchainSwap({
+              swaps: session.swaps,
+              address: target,
+              amountSats: sats,
+              claimFeeRateSatVb: rate,
+            });
+            if (!quote && route === 'swap') {
+              throw new Error(
+                'No hay solver para enviar onchain ahora mismo; usa la salida del operador.'
+              );
+            }
+            if (quote) {
+              assertOnchainSwapFee(quote, maxFeeSats);
+              try {
+                const swap = await sendOnchainSwap(session.swaps, quote);
+                await refresh();
+                return {
+                  kind: 'onchain-swap' as const,
+                  id: swap.id,
+                  feeSats: quote.feeSats,
+                  payoutAddress: target,
+                };
+              } catch (error) {
+                if (!isQuoteExpired(error)) throw error;
+                // La cotización caducó entre revisar y firmar: se repite una vez.
+                const freshRate = await claimFeeRateSatVb();
+                const fresh =
+                  freshRate === undefined
+                    ? undefined
+                    : await quoteOnchainSwap({
+                        swaps: session.swaps,
+                        address: target,
+                        amountSats: sats,
+                        claimFeeRateSatVb: freshRate,
+                      });
+                if (!fresh) throw error;
+                assertOnchainSwapFee(fresh, maxFeeSats);
+                const swap = await sendOnchainSwap(session.swaps, fresh);
+                await refresh();
+                return {
+                  kind: 'onchain-swap' as const,
+                  id: swap.id,
+                  feeSats: fresh.feeSats,
+                  payoutAddress: target,
+                };
+              }
+            }
+          }
+        }
+
+        // Salida colaborativa: el operador incluye las salidas virtuales en un
+        // intercambio por lotes y la transacción de compromiso paga el destino.
         const { txid, feeSats, changeSats } = await sendCollaborativeExit(
           session.wallet,
           target,
-          Math.floor(amountSats),
+          sats,
           maxFeeSats
         );
         await refresh();
@@ -945,16 +1041,44 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     return amount;
   }, [ensureSession, refresh]);
 
-  const quoteOnchainSend = useCallback(
-    async (destination: string, amountSats: number) => {
+  const quoteOnchainRoutes = useCallback(
+    async (
+      destination: string,
+      amountSats: number
+    ): Promise<OnchainSendRoutes> => {
       const session = await ensureSession();
       const target = destination.trim();
       if (!target) throw new Error('Indica una dirección onchain.');
-      return quoteCollaborativeExit(
-        session.wallet,
-        target,
-        Math.floor(amountSats)
-      );
+      const sats = Math.floor(amountSats);
+      // Las dos rutas se cotizan en paralelo: si una no está disponible (sin
+      // salidas virtuales gastables, sin mercado o sin tarifa L1) se ofrece la
+      // otra. Sólo se falla cuando no queda ninguna.
+      const [exitResult, swapResult] = await Promise.allSettled([
+        quoteCollaborativeExit(session.wallet, target, sats),
+        (async (): Promise<OnchainSwapQuote | undefined> => {
+          if (!onchainSwapRef.current) return undefined;
+          const rate = await claimFeeRateSatVb();
+          if (rate === undefined) return undefined;
+          return quoteOnchainSwap({
+            swaps: session.swaps,
+            address: target,
+            amountSats: sats,
+            claimFeeRateSatVb: rate,
+          });
+        })(),
+      ]);
+      const exit =
+        exitResult.status === 'fulfilled' ? exitResult.value : undefined;
+      const swap =
+        swapResult.status === 'fulfilled' ? swapResult.value : undefined;
+      if (!exit && !swap) {
+        throw exitResult.status === 'rejected'
+          ? exitResult.reason
+          : swapResult.status === 'rejected'
+            ? swapResult.reason
+            : new Error('No hay ninguna ruta disponible para enviar onchain.');
+      }
+      return { swap, exit };
     },
     [ensureSession]
   );
@@ -1205,7 +1329,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     claimCash,
     applyWalletMode,
     settleBoarding,
-    quoteOnchainSend,
+    quoteOnchainRoutes,
     getExitWallet,
     estimateUnilateralExit,
     prepareUnilateralExit,

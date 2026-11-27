@@ -99,8 +99,8 @@ const feeCeiling = (maxFeeSats: number) => ({
 
 /**
  * Paga una factura BOLT11 con el solver. Los envíos onchain **no** pasan por
- * aquí: se resuelven con una salida colaborativa (`wallet.settle`), que paga la
- * dirección de destino sin swap ni HTLC.
+ * aquí: usan el corredor onchain del mismo cliente (`src/lib/arkade/onchainSend.ts`)
+ * o, si no hay mercado, una salida colaborativa (`wallet.settle`).
  *
  * Acepta también una Lightning Address (`usuario@dominio`): se resuelve con
  * LNURL-pay a una factura BOLT11 por el importe indicado antes de pagar.
@@ -119,7 +119,7 @@ export async function payThroughSolver(
 
   if (!isLightningInvoice(invoice)) {
     throw new Error(
-      'El solver sólo paga facturas Lightning. Para enviar onchain usa una dirección Bitcoin (la salida colaborativa).'
+      'El solver sólo paga facturas Lightning en esta ruta. Para enviar onchain usa una dirección Bitcoin.'
     );
   }
 

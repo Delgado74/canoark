@@ -14,6 +14,7 @@ import {
   Paragraph,
   Row,
   Screen,
+  Segmented,
   Title,
 } from '../components/ui';
 import { colors, spacing } from '../constants/theme';
@@ -23,6 +24,9 @@ import { usePreferences } from '../hooks/usePreferences';
 import { bareAssetId } from '../lib/arkade/assetInfo';
 import { formatUnits, parseUnits } from '../lib/arkade/assets';
 import type { CollaborativeExitPlan } from '../lib/arkade/offboard';
+import type { OnchainSwapQuote } from '../lib/arkade/onchainSend';
+import { onchainSwapClaimTxid } from '../lib/arkade/client';
+import type { OnchainSendRoutes } from '../hooks/useWallet';
 import {
   arkadeExplorerTxUrl,
   onchainExplorerTxUrl,
@@ -46,7 +50,16 @@ type SendResult =
       feeSats: number;
       changeSats: number;
     }
-  | { kind: 'swap'; id: string; outcome: string; amountSats: number };
+  | {
+      kind: 'swap';
+      id: string;
+      outcome: string;
+      amountSats: number;
+      /** Swap onchain: el TXID es el claim L1 y puede tardar en existir. */
+      onchain?: boolean;
+      claimTxid?: string;
+      feeSats?: number;
+    };
 
 function outcomeLabel(outcome: string): string {
   switch (outcome) {
@@ -94,7 +107,7 @@ export default function SendScreen() {
   const {
     sendPayment,
     sendAsset,
-    quoteOnchainSend,
+    quoteOnchainRoutes,
     watchOutcome,
     balance,
     refresh,
@@ -122,8 +135,9 @@ export default function SendScreen() {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [quoting, setQuoting] = useState(false);
-  const [onchainQuote, setOnchainQuote] =
-    useState<CollaborativeExitPlan | null>(null);
+  const [onchainRoutes, setOnchainRoutes] =
+    useState<OnchainSendRoutes | null>(null);
+  const [onchainRoute, setOnchainRoute] = useState<'swap' | 'exit'>('exit');
   const [localError, setLocalError] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [result, setResult] = useState<SendResult | null>(null);
@@ -155,6 +169,19 @@ export default function SendScreen() {
     kind === 'lnurl' ||
     (kind === 'lightning' && !invoiceHasAmount);
   const isArkade = kind === 'arkade';
+  const swapQuote: OnchainSwapQuote | undefined = onchainRoutes?.swap;
+  const exitQuote: CollaborativeExitPlan | undefined = onchainRoutes?.exit;
+  const chosenFeeSats =
+    onchainRoute === 'swap' ? swapQuote?.feeSats : exitQuote?.feeSats;
+  const feeTooHigh =
+    kind === 'onchain' &&
+    chosenFeeSats !== undefined &&
+    chosenFeeSats > feeSats;
+  const cheapestRoute = (routes: OnchainSendRoutes): 'swap' | 'exit' => {
+    if (!routes.swap) return 'exit';
+    if (!routes.exit) return 'swap';
+    return routes.swap.feeSats < routes.exit.feeSats ? 'swap' : 'exit';
+  };
   const assetAmountText =
     assetAmountAtomic !== null
       ? `${formatUnits(assetAmountAtomic, assetDecimals)} ${assetTicker}`
@@ -165,7 +192,7 @@ export default function SendScreen() {
     setResult(null);
     setLocalError(null);
     setErrorDetails(null);
-    setOnchainQuote(null);
+    setOnchainRoutes(null);
     const next = parseDestination(value);
     if (!assetMode && next.amountSats && next.amountSats > 0) {
       setAmount(String(next.amountSats));
@@ -247,15 +274,21 @@ export default function SendScreen() {
       setQuoting(true);
       setErrorDetails(null);
       try {
-        const quote = await quoteOnchainSend(
+        const routes = await quoteOnchainRoutes(
           parsed.raw || destination.trim(),
           amountSats
         );
-        setOnchainQuote(quote);
-        if (quote.feeSats > feeSats) {
+        setOnchainRoutes(routes);
+        const choice = cheapestRoute(routes);
+        setOnchainRoute(choice);
+        const fee =
+          choice === 'swap'
+            ? routes.swap?.feeSats ?? 0
+            : routes.exit?.feeSats ?? 0;
+        if (fee > feeSats) {
           setLocalError(
             `La comisión estimada es ${formatSats(
-              quote.feeSats
+              fee
             )} sats y el máximo es ${formatSats(
               feeSats
             )}. Sube el máximo para continuar.`
@@ -263,14 +296,14 @@ export default function SendScreen() {
           return;
         }
       } catch (err) {
-        setOnchainQuote(null);
+        setOnchainRoutes(null);
         setLocalError(errorMessage(err));
         return;
       } finally {
         setQuoting(false);
       }
     } else {
-      setOnchainQuote(null);
+      setOnchainRoutes(null);
     }
 
     setLocalError(null);
@@ -311,7 +344,8 @@ export default function SendScreen() {
       const outcome = await sendPayment(
         parsed.raw || destination.trim(),
         amountSats,
-        feeSats
+        feeSats,
+        kind === 'onchain' ? onchainRoute : undefined
       );
       if (outcome.kind === 'payment') {
         persistNote(outcome.txid, amountSats);
@@ -330,6 +364,41 @@ export default function SendScreen() {
           changeSats: outcome.changeSats,
         });
         setStage('success');
+      } else if (outcome.kind === 'onchain-swap') {
+        const swapId = outcome.id;
+        persistNote(`swap:${swapId}`, amountSats);
+        setResult({
+          kind: 'swap',
+          id: swapId,
+          outcome: 'accepted',
+          amountSats,
+          onchain: true,
+          feeSats: outcome.feeSats,
+        });
+        setStage('success');
+        unsubscribeRef.current = watchOutcome(swapId, next => {
+          setResult(previous =>
+            previous && previous.kind === 'swap'
+              ? { ...previous, outcome: next }
+              : previous
+          );
+          if (!isTerminal(next)) return;
+          unsubscribeRef.current?.();
+          unsubscribeRef.current = null;
+          if (!isSuccess(next)) return;
+          void refresh();
+          // El TXID del swap es el del claim L1: sólo existe cuando el drive
+          // ya difundió la transacción que paga al destinatario.
+          void onchainSwapClaimTxid(swapId).then(txid => {
+            if (!txid) return;
+            persistNote(txid, amountSats);
+            setResult(previous =>
+              previous && previous.kind === 'swap'
+                ? { ...previous, claimTxid: txid }
+                : previous
+            );
+          });
+        });
       } else {
         const swapId = outcome.swap.id;
         persistNote(`swap:${swapId}`, amountSats);
@@ -371,7 +440,7 @@ export default function SendScreen() {
     setNote('');
     setResult(null);
     setLocalError(null);
-    setOnchainQuote(null);
+    setOnchainRoutes(null);
   };
 
   /* ---------------------------------------------------------------- */
@@ -380,6 +449,7 @@ export default function SendScreen() {
 
   if (stage === 'success' && result) {
     const pending = result.kind === 'swap' && !isTerminal(result.outcome);
+    const claimTxid = result.kind === 'swap' ? result.claimTxid : undefined;
     const failed =
       result.kind === 'swap' &&
       ['refunded', 'lapsed', 'failed', 'needs_recovery'].includes(
@@ -441,7 +511,19 @@ export default function SendScreen() {
         </View>
 
         {result.kind === 'swap' ? (
-          <CopyField label="ID del swap" value={result.id} />
+          <>
+            <CopyField
+              label={result.onchain && result.claimTxid ? 'TXID del claim' : 'ID del swap'}
+              value={result.claimTxid ?? result.id}
+            />
+            {result.onchain && !result.claimTxid && !pending ? (
+              <Notice tone="info">
+                El swap terminó pero el claim L1 aún no tiene TXID local. El
+                destinatario recibe el pago en la transacción que difunde el
+                solver; revísalo en Configuración → Avanzado → Solvers.
+              </Notice>
+            ) : null}
+          </>
         ) : (
           <CopyField label="TXID" value={result.txid} />
         )}
@@ -455,6 +537,13 @@ export default function SendScreen() {
         {result.kind === 'onchain' ? (
           <Row
             label="Comisión de la salida"
+            value={`${formatSats(result.feeSats)} sats`}
+          />
+        ) : null}
+
+        {result.kind === 'swap' && result.onchain && result.feeSats !== undefined ? (
+          <Row
+            label="Comisión (solver y claim)"
             value={`${formatSats(result.feeSats)} sats`}
           />
         ) : null}
@@ -479,10 +568,21 @@ export default function SendScreen() {
           />
         ) : null}
 
+        {result.kind === 'swap' && claimTxid ? (
+          <Button
+            title="Ver el claim en el explorador onchain"
+            variant="secondary"
+            onPress={() => {
+              void Linking.openURL(onchainExplorerTxUrl(claimTxid, network));
+            }}
+          />
+        ) : null}
+
         {pending ? (
           <Notice tone="warning">
-            Mantén la app abierta hasta que el swap llegue a un estado final. El
-            cliente de swaps reclama o reembolsa solo.
+            {result.kind === 'swap' && result.onchain
+              ? 'Mantén la app abierta hasta que el HTLC se reclame. La transacción del claim paga la dirección de destino; si cierras, se reanuda al desbloquear.'
+              : 'Mantén la app abierta hasta que el swap llegue a un estado final. El cliente de swaps reclama o reembolsa solo.'}
           </Notice>
         ) : null}
 
@@ -549,32 +649,56 @@ export default function SendScreen() {
             }
           />
           <Row
-            label={
-              kind === 'onchain'
-                ? 'Comisión máxima de la salida'
-                : 'Comisión máxima'
-            }
+            label="Comisión máxima"
             value={
               isArkade
                 ? 'La cobra el operador'
                 : `${formatSats(feeSats)} sats`
             }
           />
-          {kind === 'onchain' && onchainQuote ? (
+          {kind === 'onchain' && onchainRoutes ? (
             <>
               <Row
-                label="Salidas virtuales usadas"
-                value={String(onchainQuote.inputs.length)}
+                label="Ruta"
+                value={
+                  onchainRoute === 'swap'
+                    ? 'Swap del solver'
+                    : 'Salida del operador'
+                }
               />
               <Row
                 label="Comisión estimada"
-                value={`${formatSats(onchainQuote.feeSats)} sats`}
+                value={`${formatSats(chosenFeeSats ?? 0)} sats`}
               />
-              {onchainQuote.changeSats > 0 ? (
-                <Row
-                  label="Cambio"
-                  value={`${formatSats(onchainQuote.changeSats)} sats`}
-                />
+              {onchainRoute === 'swap' && swapQuote ? (
+                <>
+                  <Row
+                    label="Comisión del solver"
+                    value={`${formatSats(swapQuote.solverFeeSats)} sats`}
+                  />
+                  <Row
+                    label="Comisión del claim L1"
+                    value={`${formatSats(swapQuote.claimFeeSats)} sats`}
+                  />
+                  <Row
+                    label="Total que sale del saldo"
+                    value={`${formatSats(swapQuote.totalSats)} sats`}
+                  />
+                </>
+              ) : null}
+              {onchainRoute === 'exit' && exitQuote ? (
+                <>
+                  <Row
+                    label="Salidas virtuales usadas"
+                    value={String(exitQuote.inputs.length)}
+                  />
+                  {exitQuote.changeSats > 0 ? (
+                    <Row
+                      label="Cambio"
+                      value={`${formatSats(exitQuote.changeSats)} sats`}
+                    />
+                  ) : null}
+                </>
               ) : null}
             </>
           ) : null}
@@ -608,13 +732,74 @@ export default function SendScreen() {
             (developer preview).
           </Notice>
         ) : null}
-        {kind === 'onchain' ? (
+        {kind === 'onchain' && onchainRoutes ? (
+          <Card
+            title="Ruta del envío"
+            subtitle="La más barata viene elegida; puedes cambiarla."
+          >
+            {swapQuote && exitQuote ? (
+              <Segmented
+                options={[
+                  { value: 'swap', label: 'Swap del solver' },
+                  { value: 'exit', label: 'Salida del operador' },
+                ]}
+                value={onchainRoute}
+                onChange={setOnchainRoute}
+              />
+            ) : (
+              <Paragraph muted>
+                {swapQuote
+                  ? 'Sólo está disponible el swap del solver.'
+                  : 'Sólo está disponible la salida del operador.'}
+              </Paragraph>
+            )}
+            {onchainRoute === 'swap' && swapQuote ? (
+              <>
+                <Row
+                  label="Comisión del solver"
+                  value={`${formatSats(swapQuote.solverFeeSats)} sats`}
+                />
+                <Row
+                  label="Claim L1"
+                  value={`${formatSats(swapQuote.claimFeeSats)} sats`}
+                />
+              </>
+            ) : null}
+            {onchainRoute === 'exit' && exitQuote ? (
+              <Row
+                label="Salidas virtuales usadas"
+                value={String(exitQuote.inputs.length)}
+              />
+            ) : null}
+            <Row
+              label="Comisión total"
+              value={`${formatSats(chosenFeeSats ?? 0)} sats`}
+            />
+          </Card>
+        ) : null}
+        {kind === 'onchain' && onchainRoute === 'swap' && swapQuote ? (
+          <Notice tone="warning">
+            El solver financia un HTLC onchain y la app lo reclama para pagar la
+            dirección de destino. Mantén la app abierta hasta que el pago se
+            reclame; si se cierra, la reclamación se reanuda al desbloquear.
+          </Notice>
+        ) : null}
+        {kind === 'onchain' && onchainRoute === 'exit' ? (
           <Notice tone="warning">
             El pago se hace con una salida colaborativa: el operador incluye tus
             salidas virtuales en un intercambio por lotes y la transacción de
             compromiso paga la dirección de destino. No hay solver ni swap;
             mantén la app abierta hasta que el lote cierre.
           </Notice>
+        ) : null}
+        {feeTooHigh ? (
+          <ErrorBanner
+            message={`La comisión estimada es ${formatSats(
+              chosenFeeSats ?? 0
+            )} sats y el máximo es ${formatSats(
+              feeSats
+            )}. Sube el máximo o elige otra ruta.`}
+          />
         ) : null}
         {kind === 'arkade' ? (
           <Notice tone="info">
@@ -626,7 +811,7 @@ export default function SendScreen() {
           title="Confirmar y enviar"
           onPress={send}
           loading={busy}
-          disabled={busy}
+          disabled={busy || feeTooHigh}
         />
         <Button
           title="Cancelar"
@@ -716,7 +901,7 @@ export default function SendScreen() {
           value={amount}
           onChangeText={value => {
             setAmount(value);
-            setOnchainQuote(null);
+            setOnchainRoutes(null);
           }}
           placeholder="0"
           keyboardType={assetMode ? 'decimal-pad' : 'number-pad'}
@@ -752,7 +937,7 @@ export default function SendScreen() {
           <Field
             label={
               kind === 'onchain'
-                ? 'Comisión máxima de la salida (sats)'
+                ? 'Comisión máxima del envío (sats)'
                 : 'Comisión máxima del solver (sats)'
             }
             value={maxFee}
@@ -764,39 +949,40 @@ export default function SendScreen() {
             keyboardType="number-pad"
             hint={
               kind === 'onchain'
-                ? 'Se rechaza antes de firmar si el intercambio por lotes del operador cuesta más.'
+                ? 'Se compara con el swap del solver y la salida del operador; se rechaza si la ruta elegida cuesta más.'
                 : 'Se rechaza el pago antes de mover fondos si el solver pide más.'
             }
           />
         ) : null}
 
-        {kind === 'onchain' && onchainQuote ? (
+        {kind === 'onchain' && onchainRoutes ? (
           <Card
-            title="Offboarding"
-            subtitle="Salida onchain estimada por el operador para este importe"
+            title="Rutas disponibles"
+            subtitle="Se elige la más barata al revisar el envío"
           >
-            <Row
-              label="Salidas virtuales necesarias"
-              value={String(onchainQuote.inputs.length)}
-            />
-            <Row
-              label="Comisión estimada"
-              value={`${formatSats(onchainQuote.feeSats)} sats`}
-            />
-            {onchainQuote.changeSats > 0 ? (
+            {swapQuote ? (
               <Row
-                label="Cambio"
-                value={`${formatSats(onchainQuote.changeSats)} sats`}
+                label="Swap del solver"
+                value={`${formatSats(swapQuote.feeSats)} sats`}
               />
             ) : null}
-            {onchainQuote.feeSats > feeSats ? (
+            {exitQuote ? (
+              <Row
+                label="Salida del operador"
+                value={`${formatSats(exitQuote.feeSats)} sats`}
+              />
+            ) : null}
+            {!swapQuote ? (
+              <Paragraph muted>
+                El solver no ofrece el corredor onchain ahora mismo.
+              </Paragraph>
+            ) : null}
+            {chosenFeeSats !== undefined && chosenFeeSats > feeSats ? (
               <Button
-                title={`Usar ${formatSats(
-                  onchainQuote.feeSats
-                )} sats como máximo`}
+                title={`Usar ${formatSats(chosenFeeSats)} sats como máximo`}
                 variant="secondary"
                 onPress={() => {
-                  setMaxFee(String(onchainQuote.feeSats));
+                  setMaxFee(String(chosenFeeSats));
                   setLocalError(null);
                 }}
               />

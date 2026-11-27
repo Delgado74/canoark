@@ -28,6 +28,8 @@ export type Preferences = {
   currency: FiatCurrency;
   haptics: boolean;
   autoLockMinutes: AutoLockMinutes;
+  /** Permite que un envío a una dirección Bitcoin use el swap del solver. */
+  onchainSwap: boolean;
 };
 
 export const BITCOIN_UNITS: { value: BitcoinUnit; label: string }[] = [
@@ -54,6 +56,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   currency: 'USD',
   haptics: true,
   autoLockMinutes: DEFAULT_AUTO_LOCK_MINUTES,
+  // El solver se ofrece como ruta cuando su comisión total es la más barata.
+  onchainSwap: true,
 };
 
 const PREFERENCES_DB = 'canoark-preferences.db';
@@ -97,6 +101,7 @@ export async function loadPreferences(): Promise<Preferences> {
     const currency = stored.get('currency');
     const haptics = stored.get('haptics');
     const autoLockMinutes = stored.get('autoLockMinutes');
+    const onchainSwap = stored.get('onchainSwap');
     return {
       unit: isUnit(unit) ? unit : DEFAULT_PREFERENCES.unit,
       currency: isCurrency(currency)
@@ -109,6 +114,10 @@ export async function loadPreferences(): Promise<Preferences> {
       autoLockMinutes: isAutoLockMinutes(autoLockMinutes)
         ? (Number(autoLockMinutes) as AutoLockMinutes)
         : DEFAULT_PREFERENCES.autoLockMinutes,
+      onchainSwap:
+        onchainSwap === undefined
+          ? DEFAULT_PREFERENCES.onchainSwap
+          : onchainSwap === 'true',
     };
   } catch {
     return DEFAULT_PREFERENCES;
@@ -121,6 +130,7 @@ export async function savePreferences(preferences: Preferences): Promise<void> {
     ['currency', preferences.currency],
     ['haptics', String(preferences.haptics)],
     ['autoLockMinutes', String(preferences.autoLockMinutes)],
+    ['onchainSwap', String(preferences.onchainSwap)],
   ];
   try {
     const database = await getDb();
